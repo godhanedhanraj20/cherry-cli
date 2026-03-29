@@ -1,27 +1,21 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
-class SendOtpRequest(BaseModel):
+class LoginRequest(BaseModel):
     api_id: int
     api_hash: str
     phone_number: str
-
-
-class VerifyOtpRequest(BaseModel):
-    phone_number: str
     otp: str
+    password: Optional[str] = None
 
 
-class TwoFARequest(BaseModel):
-    password: str
+class LoginResponse(BaseModel):
+    status: str
+    is_premium: bool
 
 
 class AuthStatusResponse(BaseModel):
     logged_in: bool
     is_premium: bool = False
-
-
-class AuthResponse(BaseModel):
-    status: str
-    is_premium: bool = False
-    requires_2fa: bool = False

@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.routes import auth, files, operations
@@ -25,12 +24,6 @@ async def http_exception_handler(_, exc: HTTPException):
     else:
         payload = {"error": str(detail)}
     return JSONResponse(status_code=exc.status_code, content=payload)
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(_, exc: RequestValidationError):
-    first_error = exc.errors()[0].get("msg", "Validation error") if exc.errors() else "Validation error"
-    return JSONResponse(status_code=422, content={"error": first_error})
 
 
 app.include_router(auth.router)

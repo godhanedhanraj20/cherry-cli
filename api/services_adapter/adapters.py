@@ -4,97 +4,36 @@ from contextlib import suppress
 from typing import Optional
 
 from fastapi import UploadFile
-from pyrogram.errors import SessionPasswordNeeded
 
-from services.auth import check_auth_status, setup_credentials
+from services.auth import authenticate_user, check_auth_status, setup_credentials
 from services.file_service import delete_file, download_file, get_files, search_files, upload_file
-from telegram.client import get_client as make_client
 from utils.errors import TSGError
-
-_PENDING_OTP: dict[str, dict] = {}
-_PENDING_2FA: dict[str, object] = {}
-_LAST_2FA_PHONE: Optional[str] = None
 
 
 def _noop_log_cb(_: str, __: str):
     return None
 
 
-async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
+async def login_adapter(api_id: int, api_hash: str, phone_number: str, otp: str, password: Optional[str] = None):
     await setup_credentials(api_id, api_hash)
 
-    client = make_client(api_id, api_hash)
-    try:
-        await client.connect()
-        sent_code = await client.send_code(phone_number)
-        _PENDING_OTP[phone_number] = {
-            "api_id": api_id,
-            "api_hash": api_hash,
-            "phone_code_hash": sent_code.phone_code_hash,
-            "client": client,
-        }
-        return {"status": "otp_sent", "is_premium": False, "requires_2fa": False}
-    except Exception as exc:
-        with suppress(Exception):
-            await client.disconnect()
-        raise TSGError(f"Error sending code: {str(exc)}") from exc
+    answers = {
+        "Enter your phone number (e.g., +1234567890)": phone_number,
+        "Enter the OTP code received on Telegram": otp,
+        "Two-Step Verification enabled. Enter your password": password or "",
+    }
 
+    def prompt_cb(text: str, is_password: bool):
+        del is_password
+        if text in answers:
+            return answers[text]
+        raise TSGError(f"Unexpected authentication prompt: {text}")
 
-async def verify_otp_adapter(phone_number: str, otp: str):
-    global _LAST_2FA_PHONE
-
-    pending = _PENDING_OTP.get(phone_number)
-    if not pending:
-        raise TSGError("No pending OTP session for this phone number. Send OTP first.")
-
-    client = pending["client"]
-    try:
-        await client.sign_in(phone_number, pending["phone_code_hash"], otp)
-        me = await client.get_me()
-        is_premium = bool(getattr(me, "is_premium", False))
-
-        with suppress(KeyError):
-            del _PENDING_OTP[phone_number]
-        with suppress(Exception):
-            await client.disconnect()
-
-        return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
-    except SessionPasswordNeeded:
-        _PENDING_2FA[phone_number] = client
-        _LAST_2FA_PHONE = phone_number
-        with suppress(KeyError):
-            del _PENDING_OTP[phone_number]
-        return {"status": "2fa_required", "is_premium": False, "requires_2fa": True}
-    except Exception as exc:
-        with suppress(Exception):
-            await client.disconnect()
-        with suppress(KeyError):
-            del _PENDING_OTP[phone_number]
-        raise TSGError(f"Invalid or expired code: {str(exc)}") from exc
-
-
-async def two_fa_adapter(password: str):
-    global _LAST_2FA_PHONE
-
-    if not _LAST_2FA_PHONE or _LAST_2FA_PHONE not in _PENDING_2FA:
-        raise TSGError("No pending 2FA session. Verify OTP first.")
-
-    phone_number = _LAST_2FA_PHONE
-    client = _PENDING_2FA[phone_number]
-    try:
-        await client.check_password(password)
-        me = await client.get_me()
-        is_premium = bool(getattr(me, "is_premium", False))
-
-        with suppress(KeyError):
-            del _PENDING_2FA[phone_number]
-        _LAST_2FA_PHONE = None
-        with suppress(Exception):
-            await client.disconnect()
-
-        return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
-    except Exception as exc:
-        raise TSGError(f"Invalid password: {str(exc)}") from exc
+    result = await authenticate_user(prompt_cb=prompt_cb, log_cb=_noop_log_cb)
+    return {
+        "status": result.get("status", "success"),
+        "is_premium": bool(result.get("is_premium", False)),
+    }
 
 
 async def auth_status_adapter():
