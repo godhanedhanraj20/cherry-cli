@@ -1,7 +1,6 @@
 import os
 import sys
 import asyncio
-import json
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -9,8 +8,9 @@ from typing import List, Optional
 
 from services.auth import authenticate_user, check_auth_status, get_authenticated_client
 from services.file_service import upload_file, get_files, download_file, delete_file, search_files
+from services.metadata_service import manage_tags, rename_file
+from services.backup_service import backup_metadata, list_metadata_backups, restore_metadata_backup
 from utils.errors import TSGError
-from utils.metadata_manager import add_tag, remove_tag, get_tags, set_custom_name, remove_custom_name, METADATA_FILE
 from utils.parser import format_size
 
 app = typer.Typer(help="TSG-CLI: Telegram Storage CLI")
@@ -42,6 +42,10 @@ def log_cb(level: str, msg: str):
         error(msg)
     elif level == "dim":
         dim(msg)
+    elif level == "progress":
+        print(f"\r  {msg}", end="", flush=True)
+    elif level == "progress_done":
+        print()
     else:
         console.print(msg)
 
@@ -361,23 +365,15 @@ def tag(
     file_ids = [fid.strip() for fid in file_ids_str.split(",")]
     
     try:
-        if action not in ["add", "remove", "list"]:
-            raise TSGError("Invalid action. Use: add, remove, list")
-            
         for fid in file_ids:
             try:
+                result = manage_tags([fid], action, tag_name)[0]
                 if action == "add":
-                    if not tag_name:
-                        raise TSGError("Tag name is required for adding a tag.")
-                    add_tag(fid, tag_name)
                     success(f"Tag added to {fid}: {tag_name}")
                 elif action == "remove":
-                    if not tag_name:
-                        raise TSGError("Tag name is required for removing a tag.")
-                    remove_tag(fid, tag_name)
                     success(f"Tag removed from {fid}: {tag_name}")
                 elif action == "list":
-                    tags = get_tags(fid)
+                    tags = result.get("tags", [])
                     if tags:
                         info(f"Tags for {fid}: {', '.join(tags)}")
                     else:
@@ -405,15 +401,11 @@ def rename(
     """Rename a file (virtual name)"""
     console.print("\n[bold cyan]=== Rename File ===[/bold cyan]\n")
     try:
-        if name is not None and not name.strip():
-            raise TSGError("Name cannot be empty")
-            
-        if name:
-            set_custom_name(file_id, name)
-            success(f"Name updated: {name}")
-        else:
-            remove_custom_name(file_id)
+        result = rename_file(file_id, name)
+        if result.get("removed"):
             success("Custom name removed")
+        else:
+            success(f"Name updated: {result['custom_name']}")
     except TSGError as e:
         error(str(e))
         raise typer.Exit(1)
@@ -428,16 +420,8 @@ def backup():
     async def _backup():
         client = await get_authenticated_client()
         try:
-            if not os.path.exists(METADATA_FILE):
-                raise TSGError("No metadata found to backup.")
-                
             info("Backing up metadata to Telegram...")
-            await client.send_document(
-                "me", 
-                document=METADATA_FILE, 
-                caption="#TSG_METADATA_BACKUP",
-                file_name="metadata_backup.json"
-            )
+            await backup_metadata(client)
             success("Backup uploaded to Telegram")
         finally:
             await client.disconnect()
@@ -452,16 +436,9 @@ def restore(select: bool = typer.Option(False, "--select", help="Choose backup m
         client = await get_authenticated_client()
         try:
             info("Searching for backups...")
-            backups = []
-            
-            async for message in client.get_chat_history("me"):
-                if message.document and getattr(message, "caption", None) and "#TSG_METADATA_BACKUP" in message.caption:
-                    backups.append(message)
-                        
+            backups = await list_metadata_backups(client)
             if not backups:
                 raise TSGError("No backup found")
-                
-            backups.sort(key=lambda x: x.date, reverse=True)
             
             if select:
                 table = Table(title="Available Backups")
@@ -484,41 +461,10 @@ def restore(select: bool = typer.Option(False, "--select", help="Choose backup m
                     selected_id = int(selected_id)
                 except ValueError:
                     raise TSGError("Invalid backup ID")
-                
-                selected_backup = next((b for b in backups if b.id == selected_id), None)
-                        
-                if not selected_backup:
-                    raise TSGError("Invalid backup ID")
+
+                await restore_metadata_backup(client, backup_id=selected_id)
             else:
-                selected_backup = backups[0]
-                
-            info(f"Downloading backup (ID: {selected_backup.id})...")
-            
-            temp_dir = os.path.expanduser("~/.tsg-cli/tmp_backup")
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-                
-            temp_file = os.path.join(temp_dir, "metadata_temp.json")
-            downloaded_path = await client.download_media(selected_backup, file_name=temp_file)
-            
-            if not downloaded_path:
-                raise TSGError("Failed to download backup file.")
-                
-            try:
-                with open(downloaded_path, "r") as f:
-                    json.load(f)
-            except Exception:
-                raise TSGError("Backup file is corrupted")
-                
-            # Safely replace metadata.json
-            os.replace(downloaded_path, METADATA_FILE)
-            
-            # Cleanup temp dir if empty
-            try:
-                os.rmdir(temp_dir)
-            except OSError:
-                pass
-                
+                await restore_metadata_backup(client)
             success("Metadata restored successfully from Telegram backup")
         finally:
             await client.disconnect()
