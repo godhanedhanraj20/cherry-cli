@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from api.dependencies.auth import get_client
-from api.schemas.file import FileListResponse, FileSearchResponse, UploadResponse
+from api.schemas.file import FileListResponse, FileSearchResponse, FileTypeValue, SortValue, UploadResponse
 from api.services_adapter.adapters import download_adapter, list_adapter, search_adapter, upload_adapter
 from utils.errors import TSGError
 
@@ -26,8 +26,8 @@ async def upload(file: UploadFile = File(...), client=Depends(get_client)):
 async def list_files(
     limit: int = Query(50, ge=1, le=200),
     page: int = Query(1, ge=1),
-    sort: str = Query("date"),
-    type: Optional[str] = Query(None),
+    sort: SortValue = Query("date"),
+    type: Optional[FileTypeValue] = Query(None),
     tag: Optional[str] = Query(None),
     client=Depends(get_client),
 ):
@@ -39,8 +39,8 @@ async def search(
     query: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     page: int = Query(1, ge=1),
-    sort: str = Query("date"),
-    type: Optional[str] = Query(None),
+    sort: SortValue = Query("date"),
+    type: Optional[FileTypeValue] = Query(None),
     tag: Optional[str] = Query(None),
     client=Depends(get_client),
 ):
@@ -70,6 +70,7 @@ async def download(file_id: int, client=Depends(get_client)):
             os.rmdir(output_dir)
 
     file_stream = open(path, "rb")
+
     def _close_and_cleanup():
         file_stream.close()
         _cleanup()
