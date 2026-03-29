@@ -1,6 +1,6 @@
 # TSG-CLI: Telegram-Based File Storage System
 
-A powerful CLI tool for managing files on Telegram with advanced features like batch operations, virtual folders, tagging, and retry-based transfers.
+A powerful CLI tool for managing files on Telegram with advanced features like batch operations, tagging, and retry-based transfers.
 
 ---
 
@@ -12,14 +12,13 @@ A powerful CLI tool for managing files on Telegram with advanced features like b
 * Download with retry & resume support
 * Delete files
 * Batch operations:
-  * Batch upload
-  * Batch download
-  * Batch delete
-  * Batch tagging
+  * Folder upload (recursive)
+  * Batch download (space-separated IDs)
+  * Batch delete (space-separated IDs)
+  * Batch tagging (comma-separated IDs)
 * Tagging system
-* Virtual folder system (path-based)
 * Rename (virtual metadata)
-* Backup & restore metadata
+* Cloud backup & restore metadata to Telegram
 
 ### CLI Features
 
@@ -90,6 +89,7 @@ tsg-cli/
 **Upload:**
 ```bash
 python main.py upload file.mp4
+python main.py upload ./movies/
 ```
 
 **Download:**
@@ -99,12 +99,12 @@ python main.py download 12345
 
 **Search:**
 ```bash
-python main.py search --query "movie"
+python main.py search movie --tag anime
 ```
 
 **Batch Operations:**
 ```bash
-python main.py upload file1.mp4 file2.mp4
+python main.py download 12345 67890
 ```
 
 ---
@@ -126,7 +126,6 @@ The application requires Telegram API credentials to operate.
 **Completed:**
 * Core CLI system
 * Batch operations
-* Folder system
 * Retry mechanisms
 * Metadata system
 

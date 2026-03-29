@@ -11,13 +11,12 @@ This document provides a complete breakdown of all CLI commands and core system 
 
 **Command:** `login`
 
-The CLI requires an initial login sequence to authenticate with the Telegram API.
-
+**Features:**
 * OTP-based login
 * 2FA support
 * Session persistence
 
-**Example:**
+**Examples:**
 ```bash
 python main.py login
 ```
@@ -34,15 +33,11 @@ python main.py login
 
 ### 3.1 Upload
 
-**Command:**
-```bash
-python main.py upload <file_paths>
-```
+**Command:** `upload`
 
 **Features:**
 * Single file upload
-* Batch upload
-* Folder upload (recursive)
+* Folder upload (recursive batch upload)
 * File validation (size limits)
 * Progress display
 * Retry on failure
@@ -50,26 +45,24 @@ python main.py upload <file_paths>
 **Examples:**
 ```bash
 python main.py upload file.mp4
-python main.py upload file1.mp4 file2.mp4
 python main.py upload ./movies/
 ```
 
 **Behavior:**
-* Automatically detects files vs folders
-* Expands folders recursively
+* Accepts only ONE path argument per command
+* Automatically detects a file vs folder
+* Expands folders recursively for batch uploading
 * Skips missing files
 * Shows progress and speed
 
 ### 3.2 Download
 
-**Command:**
-```bash
-python main.py download <file_ids>
-```
+**Command:** `download`
 
 **Features:**
 * Single file download
-* Batch download
+* Batch download (multiple IDs)
+* Custom output directory (`--output` / `-o`)
 * Resume support
 * Retry logic
 * Partial file cleanup
@@ -78,6 +71,7 @@ python main.py download <file_ids>
 ```bash
 python main.py download 12345
 python main.py download 12345 67890
+python main.py download 12345 -o ./downloads
 ```
 
 **Behavior:**
@@ -87,23 +81,38 @@ python main.py download 12345 67890
 
 ### 3.3 Delete
 
-**Command:**
-```bash
-python main.py delete <file_ids>
-```
+**Command:** `delete`
 
 **Features:**
 * Batch delete
 * Confirmation prompt
 
-**Example:**
+**Examples:**
 ```bash
+python main.py delete 12345
 python main.py delete 12345 67890
 ```
 
 **Behavior:**
+* Accepts space-separated file IDs
 * Asks confirmation before deleting
 * Reports success/failed count
+
+### 3.4 Rename
+
+**Command:** `rename`
+
+**Features:**
+* Modifies virtual file name
+
+**Examples:**
+```bash
+python main.py rename 12345 new_video.mp4
+```
+
+**Behavior:**
+* Updates custom file name in metadata
+* If name is empty, it resets to the original file name
 
 ---
 
@@ -112,17 +121,24 @@ python main.py delete 12345 67890
 **Command:** `search`
 
 **Features:**
-* Query-based search
+* Positional query search
 * Tag filtering
 * File type filtering
 * Combined filters
 
 **Examples:**
 ```bash
-python main.py search --query "movie"
+python main.py search movie
 python main.py search --tag anime
-python main.py search --type video
+python main.py search movie --type video --tag anime
 ```
+
+**Behavior:**
+* Query is passed as a positional argument (not a flag)
+* Requires at least one of: query, tag, or type
+* Supports combining filters
+* Returns matched results from metadata
+* Displays table output with structured data
 
 ---
 
@@ -132,14 +148,23 @@ python main.py search --type video
 
 **Features:**
 * Displays stored files
-* Pagination support
-* Sorting support
+* Pagination support (`--limit`, `--page`)
+* Sorting support (`--sort`)
+* Filtering support (`--type`, `--tag`)
 
 **Examples:**
 ```bash
 python main.py list
 python main.py list --limit 20
+python main.py list --sort name
+python main.py list --sort size
+python main.py list --sort date
 ```
+
+**Behavior:**
+* Supports sorting and pagination together
+* Tag filter supports comma-separated tags
+* Displays results in table format (ID, Name, Size, Date, Tags)
 
 ---
 
@@ -150,64 +175,30 @@ python main.py list --limit 20
 **Features:**
 * Add tags
 * Remove tags
+* List tags
 * Batch tagging
 
 **Examples:**
 ```bash
-python main.py tag 12345 add anime
+python main.py tag 12345,67890 add anime
 python main.py tag 12345,67890 remove anime
+python main.py tag 12345 list
 ```
 
 **Behavior:**
+* File IDs MUST be comma-separated
+* Multiple tags in one command are NOT supported
 * Updates local metadata
-* Supports processing multiple file IDs at once
 
 ---
 
-## 7. Virtual Folder System
+## 7. Batch Operations
 
-The virtual folder system provides path-based organization without relying on physical folders on Telegram. It is entirely metadata-driven.
-
-**Command:** `mkdir`
-
-**Example:**
-```bash
-python main.py mkdir /movies/action/
-```
-
-**Behavior:**
-* Creates a virtual folder (metadata only)
-
-**Command:** `move`
-
-**Example:**
-```bash
-python main.py move 12345 /movies/action/
-```
-
-**Behavior:**
-* Updates file path in metadata to place the file in the virtual folder
-
-**Command:** `ls`
-
-**Example:**
-```bash
-python main.py ls /movies/
-```
-
-**Behavior:**
-* Lists files and subfolders within the virtual path
-* Uses path prefix logic for organization
-
----
-
-## 8. Batch Operations
-
-The CLI natively supports batch operations for efficiency:
-* Upload
-* Download
-* Delete
-* Tag
+**Features:**
+* Upload (via folder recursion)
+* Download (via space-separated IDs)
+* Delete (via space-separated IDs)
+* Tag (via comma-separated IDs)
 
 **Behavior:**
 * Handles partial failures (if one file fails, the others continue)
@@ -217,57 +208,99 @@ The CLI natively supports batch operations for efficiency:
 
 ---
 
-## 9. Retry & Resilience
+## 8. Retry & Resilience
 
-The core system is built to handle network instability:
+**Features:**
 * Upload retry logic
 * Download retry logic
-* Resume support (downloads resume from the last saved byte)
-* Network failure handling gracefully attempts to recover
+* Resume support
+* Network failure handling
+
+**Behavior:**
+* Retry logic is handled internally by the service layer
+* Downloads resume from the last saved byte
+* Gracefully attempts to recover from network drops
 
 ---
 
-## 10. Metadata System
+## 9. Metadata System
 
 All organizational data is stored locally.
 
-* Local metadata storage (typically `~/.tsg-cli/metadata.json`)
-* Stores:
-  * `file_id`
-  * `name`
-  * `size`
-  * `path`
-  * `tags`
+**Features:**
+* Managed via `metadata_manager`
+* Local metadata storage (`metadata.json`)
+
+**Behavior:**
+* Acts as the single source of truth for the CLI
+* Automatically updated on:
+  * upload
+  * delete
+  * tag
+  * rename
+* Stores: `file_id`, `name`, `size`, `path`, `tags`
 
 ---
 
-## 11. Backup & Restore
+## 10. Backup & Restore
 
-Local metadata can be backed up and restored to easily migrate or secure the virtual file structure.
+Metadata can be backed up to Telegram and restored to sync multiple devices.
 
-**Backup Metadata:**
+### 10.1 Backup
+
+**Command:** `backup`
+
+**Features:**
+* Cloud backup of local metadata
+
+**Examples:**
 ```bash
 python main.py backup
 ```
 
-**Restore Metadata:**
+**Behavior:**
+* Uploads `metadata.json` directly to Telegram "Saved Messages"
+* Stored as a document with the tag: `#TSG_METADATA_BACKUP`
+
+### 10.2 Restore
+
+**Command:** `restore`
+
+**Features:**
+* Restores cloud metadata
+* Manual backup selection (`--select`)
+
+**Examples:**
 ```bash
 python main.py restore
+python main.py restore --select
 ```
 
+**Behavior:**
+* Fetches backups from Telegram chat history
+* Automatically selects the latest backup (unless `--select` is used)
+* Supports manual selection using `--select`
+* Downloads and replaces the local metadata file
+* Validates JSON before restoring
+* Warns before overwriting current local metadata
+
 ---
 
-## 12. Error Handling
+## 11. Error Handling
 
-The system ensures strict handling of unexpected conditions:
-* Graceful failures (no raw stack traces on common errors)
-* Partial batch failures (reports what failed without crashing the run)
-* `KeyboardInterrupt` handling safely closes buffers to prevent file corruption when pressing Ctrl+C
+**Features:**
+* Controlled failures
+* Safe interruption
+
+**Behavior:**
+* `TSGError` is used internally for controlled failures
+* Provides clear error messages for invalid file IDs
+* Handles missing local files gracefully during upload
+* `KeyboardInterrupt` handling safely closes buffers to prevent file corruption
 
 ---
 
-## 13. Limitations
+## 12. Limitations
 
 * Depends on Telegram API limits (2GB free / 4GB premium)
-* No real folders (virtual only, stored locally)
-* CLI-only interaction (no GUI or API access)
+* CLI-only interaction (no GUI or external API access)
