@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import uuid
 from contextlib import suppress
 from typing import Optional
@@ -7,11 +8,13 @@ from typing import Optional
 from fastapi import UploadFile
 from pyrogram.errors import SessionPasswordNeeded
 
+from api.schemas.file import FileItem
 from services.auth import check_auth_status, setup_credentials
 from services.file_service import delete_file, download_file, get_files, search_files, upload_file
 from telegram.client import get_client as make_client
 from utils.errors import TSGError
 
+PENDING_AUTH_TTL_SECONDS = 300
 _PENDING_AUTH: dict[str, dict] = {}
 
 
@@ -19,7 +22,18 @@ def _noop_log_cb(_: str, __: str):
     return None
 
 
+async def _cleanup_expired_sessions():
+    now = time.time()
+    expired = [(sid, data) for sid, data in _PENDING_AUTH.items() if data.get("created_at", 0) + PENDING_AUTH_TTL_SECONDS < now]
+    for sid, data in expired:
+        client = make_client(data["api_id"], data["api_hash"])
+        with suppress(Exception):
+            await client.disconnect()
+        del _PENDING_AUTH[sid]
+
+
 async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
+    await _cleanup_expired_sessions()
     await setup_credentials(api_id, api_hash)
 
     client = make_client(api_id, api_hash)
@@ -34,16 +48,18 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
             "phone_number": phone_number,
             "phone_code_hash": sent_code.phone_code_hash,
             "state": "otp_sent",
-            "client": client,
+            "created_at": time.time(),
         }
         return {"status": "otp_sent", "session_id": session_id}
     except Exception as exc:
+        raise TSGError(f"Error sending code: {str(exc)}") from exc
+    finally:
         with suppress(Exception):
             await client.disconnect()
-        raise TSGError(f"Error sending code: {str(exc)}") from exc
 
 
 async def verify_otp_adapter(session_id: str, otp: str):
+    await _cleanup_expired_sessions()
     pending = _PENDING_AUTH.get(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Send OTP first.")
@@ -51,23 +67,20 @@ async def verify_otp_adapter(session_id: str, otp: str):
     if pending.get("state") != "otp_sent":
         raise TSGError("OTP step is not pending for this session.")
 
-    client = pending["client"]
-    phone_number = pending["phone_number"]
-    phone_code_hash = pending["phone_code_hash"]
-
+    client = make_client(pending["api_id"], pending["api_hash"])
     try:
-        await client.sign_in(phone_number, phone_code_hash, otp)
+        await client.connect()
+        await client.sign_in(pending["phone_number"], pending["phone_code_hash"], otp)
         me = await client.get_me()
         is_premium = bool(getattr(me, "is_premium", False))
 
-        with suppress(Exception):
-            await client.disconnect()
         with suppress(KeyError):
             del _PENDING_AUTH[session_id]
 
         return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
     except SessionPasswordNeeded:
         pending["state"] = "2fa_required"
+        pending["created_at"] = time.time()
         return {
             "status": "2fa_required",
             "is_premium": False,
@@ -75,14 +88,16 @@ async def verify_otp_adapter(session_id: str, otp: str):
             "session_id": session_id,
         }
     except Exception as exc:
-        with suppress(Exception):
-            await client.disconnect()
         with suppress(KeyError):
             del _PENDING_AUTH[session_id]
         raise TSGError(f"Invalid or expired code: {str(exc)}") from exc
+    finally:
+        with suppress(Exception):
+            await client.disconnect()
 
 
 async def two_fa_adapter(session_id: str, password: str):
+    await _cleanup_expired_sessions()
     pending = _PENDING_AUTH.get(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Verify OTP first.")
@@ -90,20 +105,22 @@ async def two_fa_adapter(session_id: str, password: str):
     if pending.get("state") != "2fa_required":
         raise TSGError("2FA is not required for this session.")
 
-    client = pending["client"]
+    client = make_client(pending["api_id"], pending["api_hash"])
     try:
+        await client.connect()
         await client.check_password(password)
         me = await client.get_me()
         is_premium = bool(getattr(me, "is_premium", False))
 
-        with suppress(Exception):
-            await client.disconnect()
         with suppress(KeyError):
             del _PENDING_AUTH[session_id]
 
         return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
     except Exception as exc:
         raise TSGError(f"Invalid password: {str(exc)}") from exc
+    finally:
+        with suppress(Exception):
+            await client.disconnect()
 
 
 async def auth_status_adapter():
@@ -141,12 +158,12 @@ async def upload_adapter(client, file: UploadFile):
 
 async def list_adapter(client, limit: int = 50, page: int = 1, sort: str = "date", file_type: Optional[str] = None, tag: Optional[str] = None):
     files = await get_files(client, limit=limit, page=page, sort_by=sort, file_type=file_type, tag=tag, debug=False)
-    return {"files": files}
+    return {"files": [FileItem(**f) for f in files]}
 
 
 async def search_adapter(client, query: Optional[str], limit: int = 50, page: int = 1, sort: str = "date", file_type: Optional[str] = None, tag: Optional[str] = None):
     results = await search_files(client, query=query, limit=limit, page=page, sort_by=sort, file_type=file_type, tag=tag, debug=False)
-    return {"results": results}
+    return {"results": [FileItem(**f) for f in results]}
 
 
 async def download_adapter(client, file_id: int, output_path: str):

@@ -3,9 +3,8 @@ import tempfile
 from contextlib import suppress
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from starlette.background import BackgroundTask
 
 from api.dependencies.auth import get_client
 from api.schemas.file import FileListResponse, FileSearchResponse, FileTypeValue, SortValue, UploadResponse
@@ -17,7 +16,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload(file: UploadFile = File(...), client=Depends(get_client)):
-    if not file.filename:
+    if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=400, detail={"error": "No file provided"})
     return await upload_adapter(client, file)
 
@@ -50,7 +49,7 @@ async def search(
 
 
 @router.get("/{file_id}/download")
-async def download(file_id: int, client=Depends(get_client)):
+async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
     output_dir = tempfile.mkdtemp(prefix="tsg_api_download_")
     try:
         result = await download_adapter(client, file_id, output_dir)
@@ -69,16 +68,20 @@ async def download(file_id: int, client=Depends(get_client)):
         with suppress(OSError):
             os.rmdir(output_dir)
 
-    file_stream = open(path, "rb")
-
-    def _close_and_cleanup():
-        file_stream.close()
-        _cleanup()
+    def _iter_file(chunk_size: int = 1024 * 1024):
+        try:
+            with open(path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            _cleanup()
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(
-        file_stream,
+        _iter_file(),
         media_type="application/octet-stream",
         headers=headers,
-        background=BackgroundTask(_close_and_cleanup),
     )

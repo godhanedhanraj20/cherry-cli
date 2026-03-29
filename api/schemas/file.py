@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PositiveInt
 
 
 SortValue = Literal["date", "name", "size"]
@@ -32,7 +32,7 @@ class FileSearchResponse(BaseModel):
 
 
 class DeleteRequest(BaseModel):
-    file_ids: List[int]
+    file_ids: List[PositiveInt]
 
 
 class DeleteErrorItem(BaseModel):
