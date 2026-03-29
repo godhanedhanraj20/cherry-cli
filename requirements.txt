@@ -1,0 +1,6 @@
+pyrogram
+tgcrypto
+typer
+rich
+pytest
+pytest-asyncio
