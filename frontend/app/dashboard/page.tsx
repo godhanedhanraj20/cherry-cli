@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { getFiles } from '@/features/files/api';
+import { getFiles, searchFiles } from '@/features/files/api';
 import { FileTable } from '@/features/files/components/FileTable';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { handleApiError } from '@/services/error-handler';
@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>('');
   const [tagFilter, setTagFilter] = useState('');
   const [debouncedTag, setDebouncedTag] = useState('');
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
   useEffect(() => {
     const delay = setTimeout(() => {
@@ -34,6 +36,18 @@ export default function DashboardPage() {
 
     return () => clearTimeout(delay);
   }, [tagFilter]);
+
+  useEffect(() => {
+    const delay = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 500);
+
+    return () => clearTimeout(delay);
+  }, [query]);
+
+  const isSearchMode = useMemo(() => {
+    return Boolean(debouncedQuery || typeFilter || debouncedTag);
+  }, [debouncedQuery, debouncedTag, typeFilter]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -51,14 +65,16 @@ export default function DashboardPage() {
           page,
           limit: DEFAULT_LIMIT,
           sort,
+          ...(debouncedQuery && { query: debouncedQuery }),
           ...(typeFilter && { type: typeFilter }),
           ...(debouncedTag && { tag: debouncedTag }),
         };
 
-        const response = await getFiles(params);
+        const response = isSearchMode ? await searchFiles(params) : await getFiles(params);
+        const normalizedFiles = 'files' in response ? response.files : response.results;
 
         if (!isMounted) return;
-        setFiles(response.files);
+        setFiles(normalizedFiles);
       } catch (err) {
         if (!isMounted) return;
         setError(handleApiError(err));
@@ -77,7 +93,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedTag, isAuthorized, page, sort, typeFilter]);
+  }, [debouncedQuery, debouncedTag, isAuthorized, isSearchMode, page, sort, typeFilter]);
 
   if (isCheckingAuth) {
     return (
@@ -102,8 +118,26 @@ export default function DashboardPage() {
       </aside>
 
       <section style={{ display: 'grid', gridTemplateRows: '64px 1fr' }}>
-        <header style={{ borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', padding: '0 16px' }}>
+        <header
+          style={{
+            borderBottom: '1px solid #e5e7eb',
+            display: 'grid',
+            gridTemplateColumns: '140px 1fr',
+            alignItems: 'center',
+            gap: 12,
+            padding: '0 16px',
+          }}
+        >
           <h1 style={{ margin: 0, fontSize: 20 }}>Dashboard</h1>
+          <Input
+            type='text'
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder='Search by name...'
+          />
         </header>
 
         <div style={{ padding: 16, display: 'grid', gap: 16 }}>
@@ -164,7 +198,11 @@ export default function DashboardPage() {
 
           {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
 
-          {loading ? <p>Loading files...</p> : <FileTable files={files} />}
+          {loading ? (
+            <p>Loading files...</p>
+          ) : (
+            <FileTable files={files} emptyMessage={isSearchMode ? 'No results found' : 'No files found'} />
+          )}
 
           <div style={{ display: 'flex', gap: 8 }}>
             <Button

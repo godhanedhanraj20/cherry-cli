@@ -15,10 +15,15 @@ export interface GetFilesParams {
   page?: number;
   limit?: number;
   sort?: FileSort;
+  query?: string;
   type?: Exclude<FileTypeFilter, ''>;
   tag?: string;
 }
 
 export interface GetFilesResponse {
   files: FileItem[];
+}
+
+export interface SearchFilesResponse {
+  results: FileItem[];
 }

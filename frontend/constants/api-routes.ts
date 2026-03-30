@@ -4,4 +4,5 @@ export const API_ROUTES = {
   AUTH_VERIFY_OTP: '/auth/verify-otp',
   AUTH_2FA: '/auth/2fa',
   FILES: '/files',
+  FILES_SEARCH: '/files/search',
 } as const;

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 
 interface FileTableProps {
   files: FileItem[];
+  emptyMessage?: string;
 }
 
 const columns: Array<{ key: keyof FileItem; label: string }> = [
@@ -21,9 +22,9 @@ const renderValue = (file: FileItem, key: keyof FileItem) => {
   return String(value ?? '-');
 };
 
-export function FileTable({ files }: FileTableProps) {
+export function FileTable({ files, emptyMessage = 'No files found' }: FileTableProps) {
   if (files.length === 0) {
-    return <div className='text-gray-500 text-center py-4'>No files found</div>;
+    return <div className='text-gray-500 text-center py-4'>{emptyMessage}</div>;
   }
 
   return (
