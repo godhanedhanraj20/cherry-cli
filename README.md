@@ -1,159 +1,116 @@
 # TSG-CLI: Telegram-Based File Storage System
 
-A powerful CLI tool for managing files on Telegram with advanced features like batch operations, tagging, and retry-based transfers.
+TSG is a Python-based file storage system with two interfaces:
 
----
+- A CLI (`python main.py ...`) for interactive terminal workflows.
+- A REST API (FastAPI) for programmatic access.
 
-## 🌟 Features
+Telegram Saved Messages is used as the storage backend. Files are uploaded as Telegram media messages, and message IDs are used as file identifiers for download, delete, and lookup operations. Local metadata (`~/.tsg-cli/metadata.json`) provides organizational overlays such as tags and custom names.
+
+## Features
 
 ### Core Features
 
-* Upload files (2GB free / 4GB premium)
-* Download with retry & resume support
-* Delete files
-* Batch operations:
-  * Folder upload (recursive)
-  * Batch download (space-separated IDs)
-  * Batch delete (space-separated IDs)
-  * Batch tagging (comma-separated IDs)
-* Tagging system
-* Rename (virtual metadata)
-* Cloud backup & restore metadata to Telegram
+- Upload / Download / Delete
+- Search and filtering
+- Tagging system
+- Rename (metadata-based custom name)
+- Batch operations (CLI)
+- Backup and restore metadata
+- Retry and resume behavior for transfers
 
-### CLI Features
+### API Features
 
-* Login (OTP + 2FA)
-* Session persistence
-* Search:
-  * Query-based
-  * Tag-based
-  * Type-based
-* Combined filters
-* Sorting:
-  * Name
-  * Size
-  * Date
-* Pagination
-* Clean terminal output
+- REST API (FastAPI)
+- Authentication flow (OTP + optional 2FA)
+- File operations via HTTP
+- Streaming downloads
+- Structured JSON responses (download endpoint returns binary stream)
 
----
+## Architecture
 
-## 🏗️ Architecture (Internal)
+- CLI -> Services -> Telegram
+- API -> Adapters -> Services -> Telegram
 
-The system is designed with a clean, decoupled architecture:
+All core logic resides in the service layer for consistency across CLI and API.
 
-* **CLI layer**: Handles all user interaction, parsing arguments, and formatting output.
-* **Service layer**: Handles all core logic (upload, download, metadata management, and Telegram interactions).
-* **Utils**: Provides helper functions for path handling, parsing, and metadata management.
+## Project Structure
 
-All core logic is centralized in the service layer to ensure consistency and maintainability.
-
----
-
-## 📁 Project Structure
-
-```
+```text
 tsg-cli/
 ├── cli/
 ├── services/
+├── utils/
+├── api/
+│   ├── routes/
+│   ├── schemas/
+│   ├── dependencies/
+│   └── services_adapter/
 ├── tests/
-└── utils/
 ```
 
----
+## Installation
 
-## 🚀 Installation
+Requirements:
 
-### Requirements
+- Python 3.10+
 
-* Python 3.10+
+Install dependencies:
 
-### Setup
-
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Run CLI login:
-   ```bash
-   python main.py login
-   ```
-
----
-
-## 📖 Usage
-
-### Examples
-
-**Upload:**
 ```bash
-python main.py upload file.mp4
-python main.py upload ./movies/
+pip install -r requirements.txt
 ```
 
-**Download:**
+## Running
+
+CLI:
+
 ```bash
-python main.py download 12345
+python main.py login
 ```
 
-**Search:**
+API:
+
 ```bash
-python main.py search movie --tag anime
+uvicorn api.main:app --reload
 ```
 
-**Batch Operations:**
-```bash
-python main.py download 12345 67890
-```
+## Configuration
 
----
+The system requires Telegram API credentials:
 
-## ⚙️ Configuration
+- `API_ID`
+- `API_HASH`
 
-The application requires Telegram API credentials to operate.
+In current implementation, credentials are collected during login and stored in local config (`~/.tsg-cli/config.json`). Session state is persisted locally (`~/.tsg-cli/session*`) after successful authentication.
 
-* `API_ID`: Your Telegram API ID, provided via environment variables.
-* `API_HASH`: Your Telegram API Hash, provided via environment variables.
-* **Session**: Your Telegram session is persisted locally after a successful login, meaning you only need to authenticate once.
+## API Overview
 
----
+Detailed API documentation is available in `APICalls.md`.
 
-## 📊 Current Status
+## Limits
 
-**Status:** Stable CLI (Phase 4 Complete)
+Telegram upload limits enforced by current logic:
 
-**Completed:**
-* Core CLI system
-* Batch operations
-* Retry mechanisms
-* Metadata system
+- 2GB for free accounts
+- 4GB for premium accounts
 
----
+Current product surface is CLI + API only (no Web UI yet).
 
-## ⚠️ Limitations
+## Current Status
 
-* CLI-only interface
-* No graphical interface
-* No external API access (yet)
+Status: Stable CLI + API (Phase 5)
 
----
+## Roadmap
 
-## 🛣️ Roadmap
+- Web UI
+- Streaming optimization
+- Caching and performance improvements
 
-**Next:**
-* API layer
-* Web interface
-* Telegram bot integration
+## Contributing
 
----
+Follow modular service-based architecture.
 
-## 🤝 Contributing
+## License
 
-Contributions welcome. Follow clean modular architecture.
-
----
-
-## 📄 License
-
-MIT License
+MIT
