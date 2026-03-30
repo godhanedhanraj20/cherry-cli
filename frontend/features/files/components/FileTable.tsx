@@ -5,6 +5,22 @@ interface FileTableProps {
   files: FileItem[];
 }
 
+const columns: Array<{ key: keyof FileItem; label: string }> = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: 'Name' },
+  { key: 'size', label: 'Size' },
+  { key: 'date', label: 'Date' },
+  { key: 'tags', label: 'Tags' },
+];
+
+const renderValue = (file: FileItem, key: keyof FileItem) => {
+  const value = file[key];
+  if (key === 'tags' && (!value || String(value).trim() === '')) {
+    return '-';
+  }
+  return String(value ?? '-');
+};
+
 export function FileTable({ files }: FileTableProps) {
   if (files.length === 0) {
     return <p>No files found.</p>;
@@ -15,21 +31,21 @@ export function FileTable({ files }: FileTableProps) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th style={thStyle}>ID</th>
-            <th style={thStyle}>Name</th>
-            <th style={thStyle}>Size</th>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Tags</th>
+            {columns.map((column) => (
+              <th key={column.key} style={thStyle}>
+                {column.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {files.map((file) => (
             <tr key={file.id}>
-              <td style={tdStyle}>{file.id}</td>
-              <td style={tdStyle}>{file.name}</td>
-              <td style={tdStyle}>{file.size}</td>
-              <td style={tdStyle}>{file.date}</td>
-              <td style={tdStyle}>{file.tags || '-'}</td>
+              {columns.map((column) => (
+                <td key={`${file.id}-${column.key}`} style={tdStyle}>
+                  {renderValue(file, column.key)}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>

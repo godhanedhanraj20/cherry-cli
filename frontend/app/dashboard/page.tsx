@@ -25,6 +25,15 @@ export default function DashboardPage() {
   const [sort, setSort] = useState<FileSort>('date');
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>('');
   const [tagFilter, setTagFilter] = useState('');
+  const [debouncedTag, setDebouncedTag] = useState('');
+
+  useEffect(() => {
+    const delay = setTimeout(() => {
+      setDebouncedTag(tagFilter.trim());
+    }, 500);
+
+    return () => clearTimeout(delay);
+  }, [tagFilter]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -37,13 +46,15 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await getFiles({
+        const params = {
           page,
           limit,
           sort,
-          type: typeFilter || undefined,
-          tag: tagFilter.trim() || undefined,
-        });
+          ...(typeFilter && { type: typeFilter }),
+          ...(debouncedTag && { tag: debouncedTag }),
+        };
+
+        const response = await getFiles(params);
 
         if (!isMounted) return;
         setFiles(response.files);
@@ -61,7 +72,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [isAuthorized, limit, page, sort, tagFilter, typeFilter]);
+  }, [debouncedTag, isAuthorized, limit, page, sort, typeFilter]);
 
   if (isCheckingAuth) {
     return (
@@ -146,7 +157,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {error ? <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p> : null}
+          {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
 
           {loading ? <p>Loading files...</p> : <FileTable files={files} />}
 
