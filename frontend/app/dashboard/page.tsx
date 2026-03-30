@@ -12,6 +12,7 @@ import { handleApiError } from '@/services/error-handler';
 import type { FileItem, FileSort, FileTypeFilter } from '@/types/file';
 
 const DEFAULT_LIMIT = 20;
+const MIN_LOADING_TIME = 300;
 
 export default function DashboardPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
@@ -21,7 +22,6 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(DEFAULT_LIMIT);
   const [sort, setSort] = useState<FileSort>('date');
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>('');
   const [tagFilter, setTagFilter] = useState('');
@@ -43,12 +43,13 @@ export default function DashboardPage() {
     let isMounted = true;
 
     const fetchFiles = async () => {
+      const start = Date.now();
       setLoading(true);
       setError(null);
       try {
         const params = {
           page,
-          limit,
+          limit: DEFAULT_LIMIT,
           sort,
           ...(typeFilter && { type: typeFilter }),
           ...(debouncedTag && { tag: debouncedTag }),
@@ -62,6 +63,10 @@ export default function DashboardPage() {
         if (!isMounted) return;
         setError(handleApiError(err));
       } finally {
+        const elapsed = Date.now() - start;
+        if (elapsed < MIN_LOADING_TIME) {
+          await new Promise((resolve) => setTimeout(resolve, MIN_LOADING_TIME - elapsed));
+        }
         if (!isMounted) return;
         setLoading(false);
       }
@@ -72,7 +77,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedTag, isAuthorized, limit, page, sort, typeFilter]);
+  }, [debouncedTag, isAuthorized, page, sort, typeFilter]);
 
   if (isCheckingAuth) {
     return (

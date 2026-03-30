@@ -23,7 +23,7 @@ const renderValue = (file: FileItem, key: keyof FileItem) => {
 
 export function FileTable({ files }: FileTableProps) {
   if (files.length === 0) {
-    return <p>No files found.</p>;
+    return <div className='text-gray-500 text-center py-4'>No files found</div>;
   }
 
   return (
