@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import uuid
+import logging
 from contextlib import suppress
 from typing import Optional
 
@@ -15,7 +16,9 @@ from telegram.client import get_client as make_client
 from utils.errors import TSGError
 
 PENDING_AUTH_TTL_SECONDS = 300
+MAX_PENDING_SESSIONS = 100
 _PENDING_AUTH: dict[str, dict] = {}
+logger = logging.getLogger(__name__)
 
 
 def _noop_log_cb(_: str, __: str):
@@ -25,15 +28,15 @@ def _noop_log_cb(_: str, __: str):
 async def _cleanup_expired_sessions():
     now = time.time()
     expired = [(sid, data) for sid, data in _PENDING_AUTH.items() if data.get("created_at", 0) + PENDING_AUTH_TTL_SECONDS < now]
-    for sid, data in expired:
-        client = make_client(data["api_id"], data["api_hash"])
-        with suppress(Exception):
-            await client.disconnect()
+    for sid, _ in expired:
         del _PENDING_AUTH[sid]
 
 
 async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
     await _cleanup_expired_sessions()
+    logger.info("Auth send_otp attempt for phone=%s", phone_number)
+    if len(_PENDING_AUTH) >= MAX_PENDING_SESSIONS:
+        raise TSGError("Too many pending auth sessions. Try again later.")
     await setup_credentials(api_id, api_hash)
 
     client = make_client(api_id, api_hash)
@@ -60,6 +63,7 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
 
 async def verify_otp_adapter(session_id: str, otp: str):
     await _cleanup_expired_sessions()
+    logger.info("Auth verify_otp attempt for session_id=%s", session_id)
     pending = _PENDING_AUTH.get(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Send OTP first.")
@@ -98,6 +102,7 @@ async def verify_otp_adapter(session_id: str, otp: str):
 
 async def two_fa_adapter(session_id: str, password: str):
     await _cleanup_expired_sessions()
+    logger.info("Auth 2fa attempt for session_id=%s", session_id)
     pending = _PENDING_AUTH.get(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Verify OTP first.")
@@ -132,6 +137,7 @@ async def auth_status_adapter():
 
 
 async def upload_adapter(client, file: UploadFile):
+    logger.info("Upload start filename=%s", file.filename)
     suffix = os.path.splitext(file.filename or "upload.bin")[-1]
     fd, tmp_path = tempfile.mkstemp(prefix="tsg_api_upload_", suffix=suffix)
     os.close(fd)
@@ -145,6 +151,7 @@ async def upload_adapter(client, file: UploadFile):
                 out.write(chunk)
 
         metadata = await upload_file(client, tmp_path, _noop_log_cb)
+        logger.info("Upload end filename=%s file_id=%s", file.filename, metadata.get("id"))
         return {
             "file_id": metadata["id"],
             "name": metadata["name"],
@@ -167,11 +174,14 @@ async def search_adapter(client, query: Optional[str], limit: int = 50, page: in
 
 
 async def download_adapter(client, file_id: int, output_path: str):
+    logger.info("Download start file_id=%s", file_id)
     path = await download_file(client, file_id, output_path, _noop_log_cb)
+    logger.info("Download end file_id=%s path=%s", file_id, path)
     return {"path": path}
 
 
 async def delete_adapter(client, file_ids: list[int]):
+    logger.info("Delete operation start file_ids=%s", file_ids)
     deleted = 0
     failed = 0
     errors = []
@@ -186,4 +196,5 @@ async def delete_adapter(client, file_ids: list[int]):
     payload = {"deleted": deleted, "failed": failed}
     if errors:
         payload["errors"] = errors
+    logger.info("Delete operation end deleted=%s failed=%s", deleted, failed)
     return payload

@@ -7,6 +7,7 @@ from utils.metadata_manager import (
 )
 from utils.errors import TSGError
 
+# TODO: add file locking for concurrent API safety
 
 def manage_tags(file_ids: list[str], action: str, tag_name: str | None = None):
     if action not in ["add", "remove", "list"]:
