@@ -17,7 +17,10 @@ from utils.errors import TSGError
 
 PENDING_AUTH_TTL_SECONDS = 300
 MAX_PENDING_SESSIONS = 100
+MAX_2FA_ATTEMPTS = 5
+OTP_RATE_LIMIT_SECONDS = 30
 _PENDING_AUTH: dict[str, dict] = {}
+_LAST_OTP_REQUEST_TS: dict[str, float] = {}
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +38,10 @@ async def _cleanup_expired_sessions():
 async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
     await _cleanup_expired_sessions()
     logger.info("Auth send_otp attempt for phone=%s", phone_number)
+    last_request = _LAST_OTP_REQUEST_TS.get(phone_number)
+    now = time.time()
+    if last_request and now - last_request < OTP_RATE_LIMIT_SECONDS:
+        raise TSGError("Too many OTP requests. Please wait before trying again.")
     if len(_PENDING_AUTH) >= MAX_PENDING_SESSIONS:
         raise TSGError("Too many pending auth sessions. Try again later.")
     await setup_credentials(api_id, api_hash)
@@ -53,6 +60,7 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
             "state": "otp_sent",
             "created_at": time.time(),
         }
+        _LAST_OTP_REQUEST_TS[phone_number] = now
         return {"status": "otp_sent", "session_id": session_id}
     except Exception as exc:
         raise TSGError(f"Error sending code: {str(exc)}") from exc
@@ -85,6 +93,7 @@ async def verify_otp_adapter(session_id: str, otp: str):
     except SessionPasswordNeeded:
         pending["state"] = "2fa_required"
         pending["created_at"] = time.time()
+        pending["two_fa_attempts"] = 0
         return {
             "status": "2fa_required",
             "is_premium": False,
@@ -109,6 +118,10 @@ async def two_fa_adapter(session_id: str, password: str):
 
     if pending.get("state") != "2fa_required":
         raise TSGError("2FA is not required for this session.")
+    if pending.get("two_fa_attempts", 0) >= MAX_2FA_ATTEMPTS:
+        with suppress(KeyError):
+            del _PENDING_AUTH[session_id]
+        raise TSGError("2FA attempt limit exceeded. Start login again.")
 
     client = make_client(pending["api_id"], pending["api_hash"])
     try:
@@ -122,6 +135,11 @@ async def two_fa_adapter(session_id: str, password: str):
 
         return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
     except Exception as exc:
+        pending["two_fa_attempts"] = pending.get("two_fa_attempts", 0) + 1
+        if pending["two_fa_attempts"] >= MAX_2FA_ATTEMPTS:
+            with suppress(KeyError):
+                del _PENDING_AUTH[session_id]
+            raise TSGError("2FA attempt limit exceeded. Start login again.") from exc
         raise TSGError(f"Invalid password: {str(exc)}") from exc
     finally:
         with suppress(Exception):

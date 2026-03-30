@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.routes import auth, files, operations
 from utils.errors import TSGError
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="TSG API",

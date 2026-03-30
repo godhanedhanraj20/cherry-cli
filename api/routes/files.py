@@ -69,6 +69,12 @@ async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
             os.rmdir(output_dir)
 
     def _iter_file(chunk_size: int = 1024 * 1024):
+        cleaned = False
+        def _safe_cleanup():
+            nonlocal cleaned
+            if not cleaned:
+                _cleanup()
+                cleaned = True
         try:
             with open(path, "rb") as file_obj:
                 while True:
@@ -76,8 +82,11 @@ async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
                     if not chunk:
                         break
                     yield chunk
+        except Exception:
+            _safe_cleanup()
+            raise
         finally:
-            _cleanup()
+            _safe_cleanup()
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(
