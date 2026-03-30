@@ -33,6 +33,9 @@ async def _cleanup_expired_sessions():
     expired = [(sid, data) for sid, data in _PENDING_AUTH.items() if data.get("created_at", 0) + PENDING_AUTH_TTL_SECONDS < now]
     for sid, _ in expired:
         del _PENDING_AUTH[sid]
+    expired_rate_limits = [phone for phone, ts in _LAST_OTP_REQUEST_TS.items() if ts + OTP_RATE_LIMIT_SECONDS < now]
+    for phone in expired_rate_limits:
+        del _LAST_OTP_REQUEST_TS[phone]
 
 
 async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
