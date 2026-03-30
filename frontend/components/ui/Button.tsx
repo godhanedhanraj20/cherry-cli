@@ -1,11 +1,16 @@
 import * as React from 'react';
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement>;
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  loading?: boolean;
+};
 
-export function Button({ children, ...props }: ButtonProps) {
+export function Button({ children, loading = false, disabled, ...props }: ButtonProps) {
+  const isDisabled = Boolean(disabled || loading);
+
   return (
     <button
       {...props}
+      disabled={isDisabled}
       style={{
         width: '100%',
         padding: '10px 12px',
@@ -15,12 +20,12 @@ export function Button({ children, ...props }: ButtonProps) {
         color: '#ffffff',
         fontSize: 14,
         fontWeight: 600,
-        cursor: props.disabled ? 'not-allowed' : 'pointer',
-        opacity: props.disabled ? 0.6 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.6 : 1,
         ...(props.style || {}),
       }}
     >
-      {children}
+      {loading ? 'Loading...' : children}
     </button>
   );
 }

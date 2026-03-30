@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ROUTES } from '@/constants/routes';
 import { sendOtp } from '@/features/auth/api';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
@@ -38,7 +39,7 @@ export default function LoginPage() {
       });
 
       setSession(response.session_id);
-      router.push('/otp');
+      router.push(ROUTES.OTP);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -75,8 +76,8 @@ export default function LoginPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' disabled={loading}>
-          {loading ? 'Sending OTP...' : 'Send OTP'}
+        <Button type='submit' loading={loading}>
+          Send OTP
         </Button>
       </form>
     </main>

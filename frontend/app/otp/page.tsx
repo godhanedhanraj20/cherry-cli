@@ -1,32 +1,30 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ROUTES } from '@/constants/routes';
 import { verifyOtp } from '@/features/auth/api';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
 
 export default function OtpPage() {
   const router = useRouter();
   const { sessionId } = useAuthSession();
+  const { isCheckingAuth, isAuthorized } = useAuthGuard();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!sessionId) {
-      router.replace('/login');
-    }
-  }, [router, sessionId]);
-
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
     if (!sessionId) {
-      router.replace('/login');
+      router.replace(ROUTES.LOGIN);
       return;
     }
 
@@ -37,17 +35,29 @@ export default function OtpPage() {
       const response = await verifyOtp({ session_id: sessionId, otp: otp.trim() });
 
       if (response.requires_2fa) {
-        router.push('/2fa');
+        router.push(ROUTES.TWO_FA);
         return;
       }
 
-      router.push('/dashboard');
+      router.push(ROUTES.DASHBOARD);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
   };
+
+  if (isCheckingAuth) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <p>Checking session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthorized) {
+    return null;
+  }
 
   return (
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 16 }}>
@@ -65,8 +75,8 @@ export default function OtpPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' disabled={loading}>
-          {loading ? 'Verifying...' : 'Verify OTP'}
+        <Button type='submit' loading={loading}>
+          Verify OTP
         </Button>
       </form>
     </main>

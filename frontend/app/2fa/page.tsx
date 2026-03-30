@@ -1,32 +1,29 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ROUTES } from '@/constants/routes';
 import { submit2FA } from '@/features/auth/api';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
 
 export default function TwoFAPage() {
   const router = useRouter();
   const { sessionId } = useAuthSession();
+  const { isCheckingAuth, isAuthorized } = useAuthGuard();
 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!sessionId) {
-      router.replace('/login');
-    }
-  }, [router, sessionId]);
-
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!sessionId) {
-      router.replace('/login');
+      router.replace(ROUTES.LOGIN);
       return;
     }
 
@@ -35,13 +32,25 @@ export default function TwoFAPage() {
 
     try {
       await submit2FA({ session_id: sessionId, password });
-      router.push('/dashboard');
+      router.push(ROUTES.DASHBOARD);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
   };
+
+  if (isCheckingAuth) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <p>Checking session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthorized) {
+    return null;
+  }
 
   return (
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 16 }}>
@@ -57,8 +66,8 @@ export default function TwoFAPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' disabled={loading}>
-          {loading ? 'Verifying...' : 'Submit 2FA'}
+        <Button type='submit' loading={loading}>
+          Submit 2FA
         </Button>
       </form>
     </main>

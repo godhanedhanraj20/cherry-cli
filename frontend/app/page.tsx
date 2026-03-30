@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { ROUTES } from '@/constants/routes';
 import { getAuthStatus } from '@/features/auth/api';
 import { handleApiError } from '@/services/error-handler';
 
@@ -18,16 +19,16 @@ export default function SplashPage() {
         const status = await getAuthStatus();
         if (!isMounted) return;
 
-        if (status.logged_in) {
-          router.replace('/dashboard');
+        if (status.logged_in === true) {
+          router.replace(ROUTES.DASHBOARD);
           return;
         }
 
-        router.replace('/login');
+        router.replace(ROUTES.LOGIN);
       } catch (error) {
         if (!isMounted) return;
         setMessage(handleApiError(error));
-        router.replace('/login');
+        router.replace(ROUTES.LOGIN);
       }
     };
 
