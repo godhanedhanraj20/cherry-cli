@@ -9,10 +9,6 @@ from utils.parser import extract_message_metadata, format_size
 from utils.errors import TSGError
 from utils.metadata_manager import get_custom_name
 
-def _emit(log_cb: Callable[[str, str], None] | None, level: str, message: str):
-    if log_cb:
-        log_cb(level, message)
-
 def load_checkpoint(file_path: str) -> int:
     cp_file = file_path + ".checkpoint"
     if os.path.exists(cp_file):
@@ -71,16 +67,16 @@ async def upload_file(client: Client, file_path: str, log_cb: Callable[[str, str
             
             if total > 0:
                 percent = current * 100 / total
-                _emit(log_cb, "progress", f"Uploading: {percent:.2f}% ({c_fmt}/{t_fmt}) | {s_fmt}/s")
+                print(f"\r  Uploading: {percent:.2f}% ({c_fmt}/{t_fmt}) | {s_fmt}/s", end="", flush=True)
             else:
-                _emit(log_cb, "progress", f"Uploading: ({c_fmt}) | {s_fmt}/s")
+                print(f"\r  Uploading: ({c_fmt}) | {s_fmt}/s", end="", flush=True)
                 
         max_retries = 3
         
         for attempt in range(max_retries):
             try:
                 message = await client.send_document("me", document=abs_path, progress=progress)
-                _emit(log_cb, "progress_done", "")
+                print() # Move to next line after upload finishes
                 
                 metadata = extract_message_metadata(message)
                 if not metadata:
@@ -89,13 +85,13 @@ async def upload_file(client: Client, file_path: str, log_cb: Callable[[str, str
                 return metadata
                 
             except KeyboardInterrupt:
-                _emit(log_cb, "progress_done", "")
+                print() # clear progress line
                 raise
             except TSGError as e:
-                _emit(log_cb, "progress_done", "")
+                print()
                 raise e
             except Exception as e:
-                _emit(log_cb, "progress_done", "")
+                print() # Ensure the next retry output is clean
                 
                 err_str = str(e).lower()
                 is_transient = any(x in err_str for x in ["timeout", "connection", "network", "reset"])
@@ -237,6 +233,7 @@ async def download_file(client: Client, file_id: int, output_directory: str, log
                                 last_checkpoint_size = downloaded_total
                                 
                             if downloaded_total - last_log_size >= LOG_INTERVAL:
+                                print()
                                 if log_cb:
                                     log_cb("info", f"Checkpoint saved at {format_size(downloaded_total)}")
                                 last_log_size = downloaded_total
@@ -251,9 +248,9 @@ async def download_file(client: Client, file_id: int, output_directory: str, log
                         
                         if expected_size > 0:
                             percent = (downloaded_total / expected_size) * 100
-                            _emit(log_cb, "progress", f"Downloading: {percent:.2f}% ({c_fmt}/{t_fmt}) | {speed_mb:.2f} MB/s")
+                            print(f"\r  Downloading: {percent:.2f}% ({c_fmt}/{t_fmt}) | {speed_mb:.2f} MB/s", end="", flush=True)
                         else:
-                            _emit(log_cb, "progress", f"Downloading: ({c_fmt}) | {speed_mb:.2f} MB/s")
+                            print(f"\r  Downloading: ({c_fmt}) | {speed_mb:.2f} MB/s", end="", flush=True)
                             
                     # After loop ends
                     if not stream_yielded and expected_size > 0 and existing_size == 0:
@@ -274,7 +271,7 @@ async def download_file(client: Client, file_id: int, output_directory: str, log
                     save_checkpoint(file_path, existing_size + bytes_written)
                 raise
             except Exception as e:
-                _emit(log_cb, "progress_done", "")
+                print() # Ensure the next retry output is clean
                 if isinstance(e, TSGError) and "Telegram stream error" in str(e):
                     raise e
                 
@@ -309,7 +306,7 @@ async def download_file(client: Client, file_id: int, output_directory: str, log
                 # Reset start time AFTER retry
                 time_tracker[0] = time.time()
 
-        _emit(log_cb, "progress_done", "")
+        print()  # after download finishes
         
         if not download_success:
             raise TSGError("Download failed after retries")
@@ -325,7 +322,7 @@ async def download_file(client: Client, file_id: int, output_directory: str, log
         clear_checkpoint(file_path)
         return file_path
     except KeyboardInterrupt:
-        _emit(log_cb, "progress_done", "")
+        print()
         raise TSGError("Download cancelled by user")
     except TSGError as e:
         raise e

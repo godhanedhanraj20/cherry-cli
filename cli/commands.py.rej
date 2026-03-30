@@ -1,0 +1,29 @@
+--- commands.py
++++ commands.py
+@@ -176,7 +176,6 @@
+         client = await get_authenticated_client()
+         success = 0
+         failed = 0
+-        interrupted = False
+         
+         total_files = len(file_ids)
+         
+@@ -202,15 +201,13 @@
+                 except Exception as e:
+                     console.print(f"[red]Failed to download {fid}: {str(e)}[/red]")
+                     failed += 1
+                     
+-            if not interrupted:
+-                console.print()
+-                console.print(f"[green]Success: {success}[/green]")
+-                console.print(f"[red]Failed: {failed}[/red]")
++            console.print()
++            console.print(f"[green]Success: {success}[/green]")
++            console.print(f"[red]Failed: {failed}[/red]")
+             
+         except KeyboardInterrupt:
+-            interrupted = True
+             console.print("\n[yellow]Batch download cancelled by user[/yellow]")
+             raise typer.Exit(1)
+         finally:
+             try:
