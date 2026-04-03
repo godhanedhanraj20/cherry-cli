@@ -45,9 +45,15 @@ export default function DashboardPage() {
     return () => clearTimeout(delay);
   }, [query]);
 
+  const hasQuery = useMemo(() => debouncedQuery.trim().length > 0, [debouncedQuery]);
+
   const isSearchMode = useMemo(() => {
-    return Boolean(debouncedQuery || typeFilter || debouncedTag);
-  }, [debouncedQuery, debouncedTag, typeFilter]);
+    return Boolean(hasQuery || typeFilter || debouncedTag);
+  }, [debouncedTag, hasQuery, typeFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -65,13 +71,14 @@ export default function DashboardPage() {
           page,
           limit: DEFAULT_LIMIT,
           sort,
-          ...(debouncedQuery && { query: debouncedQuery }),
+          ...(hasQuery && { query: debouncedQuery }),
           ...(typeFilter && { type: typeFilter }),
           ...(debouncedTag && { tag: debouncedTag }),
         };
 
-        const response = isSearchMode ? await searchFiles(params) : await getFiles(params);
-        const normalizedFiles = 'files' in response ? response.files : response.results;
+        const shouldUseSearch = isSearchMode && Boolean(hasQuery || typeFilter || debouncedTag);
+        const response = shouldUseSearch ? await searchFiles(params) : await getFiles(params);
+        const normalizedFiles = 'files' in response ? response.files ?? [] : response.results ?? [];
 
         if (!isMounted) return;
         setFiles(normalizedFiles);
@@ -93,7 +100,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedQuery, debouncedTag, isAuthorized, isSearchMode, page, sort, typeFilter]);
+  }, [debouncedQuery, debouncedTag, hasQuery, isAuthorized, isSearchMode, page, sort, typeFilter]);
 
   if (isCheckingAuth) {
     return (
@@ -122,7 +129,7 @@ export default function DashboardPage() {
           style={{
             borderBottom: '1px solid #e5e7eb',
             display: 'grid',
-            gridTemplateColumns: '140px 1fr',
+            gridTemplateColumns: '140px 1fr auto',
             alignItems: 'center',
             gap: 12,
             padding: '0 16px',
@@ -138,6 +145,16 @@ export default function DashboardPage() {
             }}
             placeholder='Search by name...'
           />
+          <Button
+            onClick={() => {
+              setQuery('');
+              setPage(1);
+            }}
+            disabled={loading || query.length === 0}
+            style={{ width: 56 }}
+          >
+            ×
+          </Button>
         </header>
 
         <div style={{ padding: 16, display: 'grid', gap: 16 }}>
@@ -197,6 +214,14 @@ export default function DashboardPage() {
           </div>
 
           {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
+          {isSearchMode ? (
+            <div className='text-sm text-gray-500 mb-2'>
+              Filters:
+              {hasQuery && ` query=\"${debouncedQuery}\"`}
+              {typeFilter && ` type=${typeFilter}`}
+              {debouncedTag && ` tag=${debouncedTag}`}
+            </div>
+          ) : null}
 
           {loading ? (
             <p>Loading files...</p>
