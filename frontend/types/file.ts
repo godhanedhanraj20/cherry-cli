@@ -27,3 +27,24 @@ export interface GetFilesResponse {
 export interface SearchFilesResponse {
   results: FileItem[];
 }
+
+export interface UploadFileResponse {
+  file_id: number;
+  name: string;
+  size: string;
+}
+
+export interface DeleteFilesRequest {
+  file_ids: number[];
+}
+
+export interface DeleteErrorItem {
+  file_id: number;
+  error: string;
+}
+
+export interface DeleteFilesResponse {
+  deleted: number;
+  failed: number;
+  errors?: DeleteErrorItem[];
+}
