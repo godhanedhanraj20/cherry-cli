@@ -9,7 +9,7 @@ interface ColumnConfig {
 }
 
 interface FileTableProps {
-  files: FileItem[];
+  files?: FileItem[] | null;
   columns?: ColumnConfig[];
   emptyMessage?: string;
   emptyHint?: string;
@@ -65,6 +65,7 @@ export function FileTable({
   onRemoveTag,
   onRename,
 }: FileTableProps) {
+  const safeFiles = Array.isArray(files) ? files : [];
   const [tagInputs, setTagInputs] = useState<Record<number, string>>({});
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -80,7 +81,7 @@ export function FileTable({
     return <div className='text-gray-500 text-center py-4'>Loading files...</div>;
   }
 
-  if (files.length === 0) {
+  if (safeFiles.length === 0) {
     return (
       <div className='text-gray-500 text-center py-4'>
         <div>{emptyMessage}</div>
@@ -89,7 +90,7 @@ export function FileTable({
     );
   }
 
-  const allSelected = files.length > 0 && files.every((file) => selectedIds.includes(file.id));
+  const allSelected = safeFiles.length > 0 && safeFiles.every((file) => selectedIds.includes(file.id));
 
   const beginRename = (file: FileItem) => {
     setEditingNameId(file.id);
@@ -137,7 +138,7 @@ export function FileTable({
           </tr>
         </thead>
         <tbody>
-          {files.map((file) => {
+          {safeFiles.map((file) => {
             const isSelected = selectedIds.includes(file.id);
             const isDeleting = deletingId === file.id;
             const rowTags = parseTags(file.tags);

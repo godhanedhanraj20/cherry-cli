@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const currentRequestIdRef = useRef(0);
   const backupRequestIdRef = useRef(0);
   const isLoggingOutRef = useRef(false);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,6 +85,9 @@ export default function DashboardPage() {
   const [apiIdInput, setApiIdInput] = useState('');
   const [apiHashInput, setApiHashInput] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
+  const [retryLabel, setRetryLabel] = useState('Retry');
+  const [hasCriticalError, setHasCriticalError] = useState(false);
   const resetGlobalAppState = useAppStore((state) => state.resetAppState);
 
   const normalizeTag = (tag: string) => tag.trim().toLowerCase();
@@ -117,7 +121,18 @@ export default function DashboardPage() {
     setAuthStatus(null);
     setApiIdInput('');
     setApiHashInput('');
+    setRetryAction(null);
   };
+
+  useEffect(() => {
+    const handleFatal = () => setHasCriticalError(true);
+    window.addEventListener('error', handleFatal);
+    window.addEventListener('unhandledrejection', handleFatal);
+    return () => {
+      window.removeEventListener('error', handleFatal);
+      window.removeEventListener('unhandledrejection', handleFatal);
+    };
+  }, []);
 
   useEffect(() => {
     const delay = setTimeout(() => {
@@ -169,6 +184,14 @@ export default function DashboardPage() {
       const start = Date.now();
       setLoading(true);
       setError(null);
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+      fetchTimeoutRef.current = setTimeout(() => {
+        if (requestId !== currentRequestIdRef.current) return;
+        setLoading(false);
+        setError('Request timed out');
+        setRetryLabel('Retry Search');
+        setRetryAction(() => triggerRefetch);
+      }, 15000);
       try {
         const params = {
           page,
@@ -186,11 +209,18 @@ export default function DashboardPage() {
         if (!isMounted) return;
         if (requestId !== currentRequestIdRef.current) return;
         setFiles(normalizedFiles);
+        setRetryAction(null);
       } catch (err) {
         if (!isMounted) return;
         if (requestId !== currentRequestIdRef.current) return;
         setError(handleApiError(err));
+        setRetryLabel('Retry Search');
+        setRetryAction(() => triggerRefetch);
       } finally {
+        if (fetchTimeoutRef.current) {
+          clearTimeout(fetchTimeoutRef.current);
+          fetchTimeoutRef.current = null;
+        }
         const elapsed = Date.now() - start;
         if (elapsed < MIN_LOADING_TIME) {
           await new Promise((resolve) => setTimeout(resolve, MIN_LOADING_TIME - elapsed));
@@ -251,11 +281,14 @@ export default function DashboardPage() {
     try {
       await backupMetadata();
       window.alert('Metadata backup created successfully.');
+      setRetryAction(null);
       if (showBackupPanel) {
         await loadBackups();
       }
     } catch (err) {
       setBackupError(handleApiError(err));
+      setRetryLabel('Retry Backup');
+      setRetryAction(() => handleBackupNow);
     } finally {
       setIsBackingUp(false);
     }
@@ -294,7 +327,7 @@ export default function DashboardPage() {
   };
 
   const handleRestoreBackup = async (backupId: string) => {
-    if (isRestoring || isBackingUp || settingsBusy) return;
+    if (isRestoring || isBackingUp || settingsBusy || !backupId) return;
     const confirmed = window.confirm('⚠️ Restore Backup?\n\nThis will overwrite your current metadata.');
     if (!confirmed) return;
 
@@ -305,11 +338,14 @@ export default function DashboardPage() {
       resetSearchFilters();
       triggerRefetch();
       window.alert('Metadata restored successfully.');
+      setRetryAction(null);
       if (showBackupPanel) {
         await loadBackups();
       }
     } catch (err) {
       setBackupError(handleApiError(err));
+      setRetryLabel('Retry Restore');
+      setRetryAction(() => () => handleRestoreBackup(backupId));
     } finally {
       setIsRestoring(false);
     }
@@ -348,6 +384,8 @@ export default function DashboardPage() {
       setSettingsError('API HASH is required');
       return;
     }
+    const confirmed = window.confirm('Updating config will log you out. Continue?');
+    if (!confirmed) return;
 
     setIsUpdatingConfig(true);
     try {
@@ -383,6 +421,7 @@ export default function DashboardPage() {
       return;
     }
     const selectedFile = selectedFiles[0];
+    if (!selectedFile) return;
 
     setUploadError(null);
     setDeleteError(null);
@@ -392,8 +431,14 @@ export default function DashboardPage() {
     try {
       await uploadFile(selectedFile);
       triggerRefetch();
+      setRetryAction(null);
     } catch (err) {
       setUploadError(handleApiError(err));
+      setRetryLabel('Retry Upload');
+      setRetryAction(() => () => {
+        if (!fileInputRef.current) return;
+        fileInputRef.current.click();
+      });
     } finally {
       setUploading(false);
       if (fileInputRef.current) {
@@ -403,7 +448,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSingle = async (fileId: number) => {
-    if (deletingId !== null || deletingBulk || isBackingUp || isRestoring || settingsBusy || isLoggingOutRef.current) return;
+    if (!fileId || deletingId !== null || deletingBulk || isBackingUp || isRestoring || settingsBusy || isLoggingOutRef.current) return;
 
     const confirmed = window.confirm(`Delete file ${fileId}?`);
     if (!confirmed) return;
@@ -423,8 +468,11 @@ export default function DashboardPage() {
       }
       setSelectedIds([]);
       triggerRefetch();
+      setRetryAction(null);
     } catch (err) {
       setDeleteError(handleApiError(err));
+      setRetryLabel('Retry Delete');
+      setRetryAction(() => () => handleDeleteSingle(fileId));
     } finally {
       setDeletingId(null);
     }
@@ -469,8 +517,11 @@ export default function DashboardPage() {
       }
       setSelectedIds([]);
       triggerRefetch();
+      setRetryAction(null);
     } catch (err) {
       setDeleteError(handleApiError(err));
+      setRetryLabel('Retry Delete');
+      setRetryAction(() => handleDeleteSelected);
     } finally {
       setDeletingBulk(false);
     }
@@ -615,6 +666,10 @@ export default function DashboardPage() {
     return null;
   }
 
+  if (hasCriticalError) {
+    return <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>Something went wrong. Please refresh.</main>;
+  }
+
   return (
     <main style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh' }}>
       <aside style={{ borderRight: '1px solid #e5e7eb', padding: 16 }}>
@@ -754,6 +809,11 @@ export default function DashboardPage() {
           {renameError ? <div className='text-red-500'>{renameError}</div> : null}
           {backupError ? <div className='text-red-500'>{backupError}</div> : null}
           {settingsError ? <div className='text-red-500'>{settingsError}</div> : null}
+          {retryAction ? (
+            <div style={{ maxWidth: 180 }}>
+              <Button onClick={retryAction}>{retryLabel}</Button>
+            </div>
+          ) : null}
 
           {showSettingsPanel ? (
             <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
