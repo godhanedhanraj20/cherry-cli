@@ -9,6 +9,33 @@ from utils.parser import extract_message_metadata, format_size
 from utils.errors import TSGError
 from utils.metadata_manager import get_custom_name
 
+SEARCH_CACHE_TTL = 60
+_SEARCH_CACHE: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
+
+
+def _make_cache_key(query: str | None, tag: str | None, file_type: str | None, page: int, limit: int, sort_by: str | None):
+    return (query or "", tag or "", file_type or "", page, limit, sort_by or "")
+
+
+def _get_cached_search(key: tuple):
+    cached = _SEARCH_CACHE.get(key)
+    if not cached:
+        return None
+    ts, items = cached
+    if time.time() - ts > SEARCH_CACHE_TTL:
+        _SEARCH_CACHE.pop(key, None)
+        return None
+    return items
+
+
+def _set_cached_search(key: tuple, items: list[dict[str, Any]]):
+    _SEARCH_CACHE[key] = (time.time(), items)
+
+
+def invalidate_search_cache():
+    _SEARCH_CACHE.clear()
+
+
 def _emit(log_cb: Callable[[str, str], None] | None, level: str, message: str):
     if log_cb:
         log_cb(level, message)
@@ -86,6 +113,7 @@ async def upload_file(client: Client, file_path: str, log_cb: Callable[[str, str
                 if not metadata:
                     raise TSGError("Failed to extract metadata after upload.")
                     
+                invalidate_search_cache()
                 return metadata
                 
             except KeyboardInterrupt:
@@ -343,6 +371,7 @@ async def delete_file(client: Client, file_id: int):
             raise TSGError(f"Message ID {file_id} does not contain valid media.")
             
         await client.delete_messages("me", file_id)
+        invalidate_search_cache()
     except TSGError as e:
         raise e
     except Exception as e:
@@ -371,7 +400,12 @@ async def search_files(client: Client, query: str, limit: int = 50, file_type: s
     query = query.strip().lower() if query else None
     tag = tag.strip().lower() if tag else None
     file_type = file_type.strip().lower() if file_type else None
-        
+
+    cache_key = _make_cache_key(query, tag, file_type, page, limit, sort_by)
+    cached_items = _get_cached_search(cache_key)
+    if cached_items is not None:
+        return cached_items
+
     files = []
     try:
         # Fetch newest first (default in Pyrogram)
@@ -430,4 +464,5 @@ async def search_files(client: Client, query: str, limit: int = 50, file_type: s
         files.sort(key=lambda x: x["name"].lower())
 
     paginated_items = files[start:end]
+    _set_cached_search(cache_key, paginated_items)
     return paginated_items

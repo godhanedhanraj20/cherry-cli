@@ -14,12 +14,19 @@ from services.auth import check_auth_status, setup_credentials
 from services.file_service import delete_file, download_file, get_files, search_files, upload_file
 from telegram.client import get_client as make_client
 from utils.errors import TSGError
+from utils.session_store import (
+    cleanup_expired_sessions,
+    count_sessions,
+    create_session,
+    delete_session,
+    get_session,
+    update_session,
+)
 
 PENDING_AUTH_TTL_SECONDS = 300
 MAX_PENDING_SESSIONS = 100
 MAX_2FA_ATTEMPTS = 5
 OTP_RATE_LIMIT_SECONDS = 30
-_PENDING_AUTH: dict[str, dict] = {}
 _LAST_OTP_REQUEST_TS: dict[str, float] = {}
 logger = logging.getLogger(__name__)
 
@@ -29,10 +36,11 @@ def _noop_log_cb(_: str, __: str):
 
 
 async def _cleanup_expired_sessions():
+    removed = cleanup_expired_sessions(PENDING_AUTH_TTL_SECONDS)
+    if removed:
+        logger.info("Expired auth sessions cleaned up: %s", removed)
+
     now = time.time()
-    expired = [(sid, data) for sid, data in _PENDING_AUTH.items() if data.get("created_at", 0) + PENDING_AUTH_TTL_SECONDS < now]
-    for sid, _ in expired:
-        del _PENDING_AUTH[sid]
     expired_rate_limits = [phone for phone, ts in _LAST_OTP_REQUEST_TS.items() if ts + OTP_RATE_LIMIT_SECONDS < now]
     for phone in expired_rate_limits:
         del _LAST_OTP_REQUEST_TS[phone]
@@ -45,7 +53,7 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
     now = time.time()
     if last_request and now - last_request < OTP_RATE_LIMIT_SECONDS:
         raise TSGError("Too many OTP requests. Please wait before trying again.")
-    if len(_PENDING_AUTH) >= MAX_PENDING_SESSIONS:
+    if count_sessions() >= MAX_PENDING_SESSIONS:
         raise TSGError("Too many pending auth sessions. Try again later.")
     await setup_credentials(api_id, api_hash)
 
@@ -55,14 +63,16 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
         sent_code = await client.send_code(phone_number)
 
         session_id = str(uuid.uuid4())
-        _PENDING_AUTH[session_id] = {
-            "api_id": api_id,
-            "api_hash": api_hash,
-            "phone_number": phone_number,
-            "phone_code_hash": sent_code.phone_code_hash,
-            "state": "otp_sent",
-            "created_at": time.time(),
-        }
+        create_session(
+            session_id=session_id,
+            api_id=api_id,
+            api_hash=api_hash,
+            phone_number=phone_number,
+            phone_code_hash=sent_code.phone_code_hash,
+            state="otp_sent",
+            created_at=time.time(),
+            two_fa_attempts=0,
+        )
         _LAST_OTP_REQUEST_TS[phone_number] = now
         return {"status": "otp_sent", "session_id": session_id}
     except Exception as exc:
@@ -75,9 +85,13 @@ async def send_otp_adapter(api_id: int, api_hash: str, phone_number: str):
 async def verify_otp_adapter(session_id: str, otp: str):
     await _cleanup_expired_sessions()
     logger.info("Auth verify_otp attempt for session_id=%s", session_id)
-    pending = _PENDING_AUTH.get(session_id)
+    pending = get_session(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Send OTP first.")
+
+    if time.time() - float(pending.get("created_at", 0)) > PENDING_AUTH_TTL_SECONDS:
+        delete_session(session_id)
+        raise TSGError("Session expired. Send OTP again.")
 
     if pending.get("state") != "otp_sent":
         raise TSGError("OTP step is not pending for this session.")
@@ -89,14 +103,11 @@ async def verify_otp_adapter(session_id: str, otp: str):
         me = await client.get_me()
         is_premium = bool(getattr(me, "is_premium", False))
 
-        with suppress(KeyError):
-            del _PENDING_AUTH[session_id]
+        delete_session(session_id)
 
         return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
     except SessionPasswordNeeded:
-        pending["state"] = "2fa_required"
-        pending["created_at"] = time.time()
-        pending["two_fa_attempts"] = 0
+        update_session(session_id, state="2fa_required", created_at=time.time(), two_fa_attempts=0)
         return {
             "status": "2fa_required",
             "is_premium": False,
@@ -104,8 +115,7 @@ async def verify_otp_adapter(session_id: str, otp: str):
             "session_id": session_id,
         }
     except Exception as exc:
-        with suppress(KeyError):
-            del _PENDING_AUTH[session_id]
+        delete_session(session_id)
         raise TSGError(f"Invalid or expired code: {str(exc)}") from exc
     finally:
         with suppress(Exception):
@@ -115,15 +125,18 @@ async def verify_otp_adapter(session_id: str, otp: str):
 async def two_fa_adapter(session_id: str, password: str):
     await _cleanup_expired_sessions()
     logger.info("Auth 2fa attempt for session_id=%s", session_id)
-    pending = _PENDING_AUTH.get(session_id)
+    pending = get_session(session_id)
     if not pending:
         raise TSGError("Invalid session_id. Verify OTP first.")
 
+    if time.time() - float(pending.get("created_at", 0)) > PENDING_AUTH_TTL_SECONDS:
+        delete_session(session_id)
+        raise TSGError("Session expired. Send OTP again.")
+
     if pending.get("state") != "2fa_required":
         raise TSGError("2FA is not required for this session.")
-    if pending.get("two_fa_attempts", 0) >= MAX_2FA_ATTEMPTS:
-        with suppress(KeyError):
-            del _PENDING_AUTH[session_id]
+    if int(pending.get("two_fa_attempts", 0)) >= MAX_2FA_ATTEMPTS:
+        delete_session(session_id)
         raise TSGError("2FA attempt limit exceeded. Start login again.")
 
     client = make_client(pending["api_id"], pending["api_hash"])
@@ -133,15 +146,14 @@ async def two_fa_adapter(session_id: str, password: str):
         me = await client.get_me()
         is_premium = bool(getattr(me, "is_premium", False))
 
-        with suppress(KeyError):
-            del _PENDING_AUTH[session_id]
+        delete_session(session_id)
 
         return {"status": "success", "is_premium": is_premium, "requires_2fa": False}
     except Exception as exc:
-        pending["two_fa_attempts"] = pending.get("two_fa_attempts", 0) + 1
-        if pending["two_fa_attempts"] >= MAX_2FA_ATTEMPTS:
-            with suppress(KeyError):
-                del _PENDING_AUTH[session_id]
+        attempts = int(pending.get("two_fa_attempts", 0)) + 1
+        update_session(session_id, two_fa_attempts=attempts)
+        if attempts >= MAX_2FA_ATTEMPTS:
+            delete_session(session_id)
             raise TSGError("2FA attempt limit exceeded. Start login again.") from exc
         raise TSGError(f"Invalid password: {str(exc)}") from exc
     finally:

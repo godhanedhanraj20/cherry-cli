@@ -5,7 +5,7 @@ import tempfile
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Path, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from api.dependencies.auth import get_client
@@ -21,6 +21,7 @@ from api.schemas.file import (
     UploadResponse,
 )
 from api.services_adapter.adapters import download_adapter, list_adapter, search_adapter, upload_adapter
+from services.auth import get_authenticated_client
 from services.metadata_service import manage_tags, rename_file
 from utils.errors import TSGError
 
@@ -145,3 +146,37 @@ async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
         media_type="application/octet-stream",
         headers=headers,
     )
+
+
+async def _run_large_upload(tmp_path: str):
+    client = await get_authenticated_client()
+    try:
+        from services.file_service import upload_file
+
+        await upload_file(client, tmp_path)
+    finally:
+        await client.disconnect()
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@router.post("/upload/background")
+async def upload_background(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if not file.filename or not file.filename.strip():
+        raise HTTPException(status_code=400, detail={"error": "No file provided"})
+
+    suffix = os.path.splitext(file.filename)[-1] if file.filename else ""
+    fd, tmp_path = tempfile.mkstemp(prefix="tsg_api_bg_upload_", suffix=suffix)
+    os.close(fd)
+    try:
+        with open(tmp_path, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+    finally:
+        await file.close()
+
+    background_tasks.add_task(_run_large_upload, tmp_path)
+    return {"status": "started", "invalidate_cache": True}

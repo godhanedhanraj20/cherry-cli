@@ -1,6 +1,8 @@
 import logging
+import time
+from collections import defaultdict, deque
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -14,6 +16,39 @@ app = FastAPI(
     description="API for Telegram Storage System",
     version="1.0.0",
 )
+
+RATE_LIMIT = {
+    "/auth": (5, 60),
+    "/files": (30, 60),
+}
+_REQUEST_HISTORY: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    limit_rule = None
+    for prefix, rule in RATE_LIMIT.items():
+        if path.startswith(prefix):
+            limit_rule = rule
+            break
+
+    if limit_rule:
+        max_requests, window_seconds = limit_rule
+        client_ip = request.client.host if request.client else "unknown"
+        key = (client_ip, prefix)
+        now = time.time()
+
+        history = _REQUEST_HISTORY[key]
+        while history and now - history[0] > window_seconds:
+            history.popleft()
+
+        if len(history) >= max_requests:
+            return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"})
+
+        history.append(now)
+
+    return await call_next(request)
 
 
 @app.exception_handler(TSGError)
