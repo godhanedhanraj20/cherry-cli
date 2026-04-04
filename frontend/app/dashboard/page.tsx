@@ -44,11 +44,13 @@ export default function DashboardPage() {
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const normalizeTag = (tag: string) => tag.trim().toLowerCase();
+
   useEffect(() => {
     const delay = setTimeout(() => {
       const parsed = tagInput
         .split(',')
-        .map((tag) => tag.trim())
+        .map((tag) => normalizeTag(tag))
         .filter(Boolean);
       setTagFilters(Array.from(new Set(parsed)));
     }, 500);
@@ -249,11 +251,11 @@ export default function DashboardPage() {
   const parseFileTags = (tagString: string) =>
     tagString
       .split(',')
-      .map((tag) => tag.trim())
+      .map((tag) => normalizeTag(tag))
       .filter(Boolean);
 
   const handleTagClick = (tag: string) => {
-    const trimmed = tag.trim();
+    const trimmed = normalizeTag(tag);
     if (!trimmed) return;
     setTagFilters((prev) => {
       if (prev.includes(trimmed)) {
@@ -275,7 +277,9 @@ export default function DashboardPage() {
   };
 
   const handleAddTag = async (fileId: number, rawTag: string) => {
-    const nextTag = rawTag.trim();
+    setTagError(null);
+    setRenameError(null);
+    const nextTag = normalizeTag(rawTag);
     if (!nextTag) {
       setTagError('Tag cannot be empty');
       return;
@@ -288,7 +292,6 @@ export default function DashboardPage() {
       return;
     }
 
-    setTagError(null);
     setTaggingId(fileId);
     try {
       await updateFileTag({ file_id: fileId, tag: nextTag });
@@ -304,6 +307,7 @@ export default function DashboardPage() {
       );
     } catch (err) {
       setTagError(handleApiError(err));
+      triggerRefetch();
     } finally {
       setTaggingId(null);
     }
@@ -311,16 +315,19 @@ export default function DashboardPage() {
 
   const handleRemoveTag = async (fileId: number, tag: string) => {
     setTagError(null);
+    setRenameError(null);
+    const normalizedTag = normalizeTag(tag);
+    if (!normalizedTag) return;
     setTaggingId(fileId);
     try {
-      await updateFileTag({ file_id: fileId, tag, action: 'remove' });
+      await updateFileTag({ file_id: fileId, tag: normalizedTag, action: 'remove' });
       setFiles((prev) =>
         prev.map((file) =>
           file.id === fileId
             ? {
                 ...file,
                 tags: parseFileTags(file.tags)
-                  .filter((item) => item !== tag)
+                  .filter((item) => item !== normalizedTag)
                   .join(', '),
               }
             : file,
@@ -328,12 +335,15 @@ export default function DashboardPage() {
       );
     } catch (err) {
       setTagError(handleApiError(err));
+      triggerRefetch();
     } finally {
       setTaggingId(null);
     }
   };
 
   const handleRename = async (fileId: number, newName: string) => {
+    setTagError(null);
+    setRenameError(null);
     const trimmed = newName.trim();
     if (!trimmed) {
       setRenameError('Name cannot be empty');
@@ -343,19 +353,20 @@ export default function DashboardPage() {
     if (!target) return;
 
     const oldExt = target.name.includes('.') ? target.name.split('.').pop() ?? '' : '';
-    const newExt = trimmed.includes('.') ? trimmed.split('.').pop() ?? '' : '';
+    const candidateName = oldExt && !trimmed.includes('.') ? `${trimmed}.${oldExt}` : trimmed;
+    const newExt = candidateName.includes('.') ? candidateName.split('.').pop() ?? '' : '';
     if (oldExt && oldExt !== newExt) {
       setRenameError(`File extension must remain .${oldExt}`);
       return;
     }
 
-    setRenameError(null);
     setRenamingId(fileId);
     try {
-      await renameFile({ file_id: fileId, new_name: trimmed });
-      setFiles((prev) => prev.map((file) => (file.id === fileId ? { ...file, name: trimmed } : file)));
+      await renameFile({ file_id: fileId, new_name: candidateName });
+      setFiles((prev) => prev.map((file) => (file.id === fileId ? { ...file, name: candidateName } : file)));
     } catch (err) {
       setRenameError(handleApiError(err));
+      triggerRefetch();
     } finally {
       setRenamingId(null);
     }

@@ -36,7 +36,7 @@ const defaultColumns: ColumnConfig[] = [
 const parseTags = (tagsValue: string): string[] => {
   return tagsValue
     .split(',')
-    .map((tag) => tag.trim())
+    .map((tag) => tag.trim().toLowerCase())
     .filter(Boolean);
 };
 
@@ -173,7 +173,10 @@ export function FileTable({
                               </button>
                               <button
                                 type='button'
-                                onClick={() => onRemoveTag(file.id, tag)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onRemoveTag(file.id, tag);
+                                }}
                                 disabled={taggingId === file.id}
                                 aria-label={`Remove tag ${tag}`}
                                 style={tagRemoveButtonStyle}
