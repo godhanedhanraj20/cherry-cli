@@ -31,6 +31,7 @@ OTP_RATE_LIMIT_SECONDS = 30
 _LAST_OTP_REQUEST_TS: dict[str, float] = {}
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 30
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
 
 
 def _noop_log_cb(_: str, __: str):
@@ -178,11 +179,15 @@ async def upload_adapter(client, file: UploadFile):
     os.close(fd)
 
     try:
+        size = 0
         with open(tmp_path, "wb") as out:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
+                size += len(chunk)
+                if size > MAX_FILE_SIZE:
+                    raise TSGError("File too large")
                 out.write(chunk)
 
         metadata = await asyncio.wait_for(upload_file(client, tmp_path, _noop_log_cb), timeout=REQUEST_TIMEOUT_SECONDS)

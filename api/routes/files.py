@@ -5,7 +5,7 @@ import tempfile
 import time
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Path, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Path, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from api.dependencies.auth import get_client
@@ -30,6 +30,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
 _last_cleanup = 0.0
 MAX_BACKGROUND_UPLOAD_SIZE = 500 * 1024 * 1024
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
 
 
 
@@ -43,9 +44,12 @@ def should_cleanup() -> bool:
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload(file: UploadFile = File(...), client=Depends(get_client)):
+async def upload(request: Request, file: UploadFile = File(...), client=Depends(get_client)):
     if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=400, detail={"error": "No file provided"})
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail={"error": "File too large"})
     return await upload_adapter(client, file)
 
 

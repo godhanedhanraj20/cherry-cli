@@ -18,13 +18,26 @@ def ensure_config_dir():
 
 def load_config():
     ensure_config_dir()
+    config = {}
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             try:
-                return json.load(f)
+                config = json.load(f)
             except json.JSONDecodeError as exc:
                 raise TSGError("Config file is corrupted. Please delete ~/.tsg-cli/config.json and login again.") from exc
-    return {}
+
+    # ENV has priority over config file
+    env_api_id = os.getenv("API_ID")
+    env_api_hash = os.getenv("API_HASH")
+    if env_api_id:
+        try:
+            config["api_id"] = int(env_api_id)
+        except ValueError as exc:
+            raise TSGError("API_ID must be an integer") from exc
+    if env_api_hash:
+        config["api_hash"] = env_api_hash
+
+    return config
 
 
 
