@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { getAuthStatus as fetchAuthStatus, logout, updateConfig } from '@/features/auth/api';
+import { useAuthStore } from '@/features/auth/store';
 import {
   backupMetadata,
   type BackupItem,
@@ -42,6 +43,7 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentRequestIdRef = useRef(0);
   const backupRequestIdRef = useRef(0);
+  const isLoggingOutRef = useRef(false);
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -202,33 +204,6 @@ export default function DashboardPage() {
     };
   }, [debouncedQuery, debouncedTagFilters, hasQuery, isAuthorized, isSearchMode, page, reloadKey, sort, typeFilter]);
 
-  useEffect(() => {
-    if (!isAuthorized) return;
-    let isMounted = true;
-
-    const validateSession = async () => {
-      try {
-        const status = await fetchAuthStatus();
-        if (!isMounted) return;
-        if (!status.logged_in) {
-          resetAppState();
-          clearSession();
-          router.replace('/login');
-          return;
-        }
-        setAuthStatus(status);
-      } catch (err) {
-        if (!isMounted) return;
-        setSettingsError(handleApiError(err));
-      }
-    };
-
-    validateSession();
-    return () => {
-      isMounted = false;
-    };
-  }, [clearSession, isAuthorized, router]);
-
   const triggerRefetch = () => setReloadKey((prev) => prev + 1);
 
   const resetSearchFilters = () => {
@@ -295,6 +270,25 @@ export default function DashboardPage() {
     await loadBackups();
   };
 
+  const handleToggleSettingsPanel = async () => {
+    if (settingsBusy) return;
+    const next = !showSettingsPanel;
+    setShowSettingsPanel(next);
+    if (!next) {
+      setAuthStatus(null);
+      return;
+    }
+    setSettingsError(null);
+    try {
+      const status = await fetchAuthStatus();
+      if (isLoggingOutRef.current) return;
+      setAuthStatus(status);
+    } catch (err) {
+      if (isLoggingOutRef.current) return;
+      setSettingsError(handleApiError(err));
+    }
+  };
+
   const handleRestoreBackup = async (backupId: string) => {
     if (isRestoring || isBackingUp || settingsBusy) return;
     const confirmed = window.confirm('⚠️ Restore Backup?\n\nThis will overwrite your current metadata.');
@@ -324,13 +318,14 @@ export default function DashboardPage() {
 
     setSettingsError(null);
     setIsLoggingOut(true);
+    isLoggingOutRef.current = true;
     try {
       await logout();
-    } catch (err) {
-      setSettingsError(handleApiError(err));
     } finally {
       resetAppState();
+      useAuthStore.getState().resetAuthState();
       clearSession();
+      isLoggingOutRef.current = false;
       setIsLoggingOut(false);
       router.push('/login');
     }
@@ -341,8 +336,12 @@ export default function DashboardPage() {
     setSettingsError(null);
     const apiId = apiIdInput.trim();
     const apiHash = apiHashInput.trim();
-    if (!apiId || !apiHash) {
-      setSettingsError('API ID and API HASH are required');
+    if (!/^\d+$/.test(apiId)) {
+      setSettingsError('API ID must be numeric');
+      return;
+    }
+    if (!apiHash) {
+      setSettingsError('API HASH is required');
       return;
     }
 
@@ -351,7 +350,9 @@ export default function DashboardPage() {
       await updateConfig({ api_id: apiId, api_hash: apiHash });
       window.alert('Configuration updated. Please login again.');
       resetAppState();
+      useAuthStore.getState().resetAuthState();
       clearSession();
+      isLoggingOutRef.current = false;
       router.push('/login');
     } catch (err) {
       setSettingsError(handleApiError(err));
@@ -361,7 +362,7 @@ export default function DashboardPage() {
   };
 
   const handleUploadClick = () => {
-    if (uploading || isBackingUp || isRestoring || settingsBusy) return;
+    if (uploading || isBackingUp || isRestoring || settingsBusy || isLoggingOutRef.current) return;
     fileInputRef.current?.click();
   };
 
@@ -398,7 +399,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSingle = async (fileId: number) => {
-    if (deletingId !== null || deletingBulk || isBackingUp || isRestoring || settingsBusy) return;
+    if (deletingId !== null || deletingBulk || isBackingUp || isRestoring || settingsBusy || isLoggingOutRef.current) return;
 
     const confirmed = window.confirm(`Delete file ${fileId}?`);
     if (!confirmed) return;
@@ -444,7 +445,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSelected = async () => {
-    if (selectedIds.length === 0 || deletingBulk || deletingId !== null || isBackingUp || isRestoring || settingsBusy) return;
+    if (selectedIds.length === 0 || deletingBulk || deletingId !== null || isBackingUp || isRestoring || settingsBusy || isLoggingOutRef.current) return;
 
     const confirmed = window.confirm(`Delete ${selectedIds.length} selected file(s)?`);
     if (!confirmed) return;
@@ -665,7 +666,7 @@ export default function DashboardPage() {
           >
             {showBackupPanel ? 'Hide Backups' : 'Backup History'}
           </Button>
-          <Button onClick={() => setShowSettingsPanel((prev) => !prev)} disabled={settingsBusy} style={{ width: 110 }}>
+          <Button onClick={handleToggleSettingsPanel} disabled={settingsBusy} style={{ width: 110 }}>
             {showSettingsPanel ? 'Hide Settings' : 'Settings'}
           </Button>
           <Button onClick={handleLogout} disabled={settingsBusy} style={{ width: 100 }}>
@@ -753,6 +754,7 @@ export default function DashboardPage() {
               <strong>Account Info</strong>
               <div>Status: {authStatus?.logged_in ? 'Logged In' : 'Logged Out'}</div>
               <div>Type: {authStatus?.is_premium ? 'Premium' : 'Free'}</div>
+              {authStatus?.is_premium ? <div style={{ color: '#2563eb', fontWeight: 600 }}>Premium Account</div> : null}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
                 <Input
                   type='text'

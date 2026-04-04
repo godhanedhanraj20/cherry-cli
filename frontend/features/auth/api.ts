@@ -35,8 +35,12 @@ export const submit2FA = async (payload: TwoFARequest) => {
 };
 
 export const logout = async () => {
-  const response = await api.post('/auth/logout');
-  return response.data;
+  try {
+    const response = await api.post('/auth/logout');
+    return response.data;
+  } catch {
+    return null;
+  }
 };
 
 export const updateConfig = async (payload: UpdateConfigRequest) => {
