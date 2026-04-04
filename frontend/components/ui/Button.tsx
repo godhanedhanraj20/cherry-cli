@@ -22,6 +22,8 @@ export function Button({ children, loading = false, disabled, ...props }: Button
         fontWeight: 600,
         cursor: isDisabled ? 'not-allowed' : 'pointer',
         opacity: isDisabled ? 0.6 : 1,
+        transition: 'all 180ms ease-in-out',
+        transform: isDisabled ? 'none' : 'translateZ(0)',
         ...(props.style || {}),
       }}
     >

@@ -337,7 +337,7 @@ export default function DashboardPage() {
       await restoreBackup(backupId);
       resetSearchFilters();
       triggerRefetch();
-      window.alert('Metadata restored successfully.');
+      window.alert(`Backup "${backupId}" restored successfully.`);
       setRetryAction(null);
       if (showBackupPanel) {
         await loadBackups();
@@ -430,6 +430,7 @@ export default function DashboardPage() {
     setUploading(true);
     try {
       await uploadFile(selectedFile);
+      window.alert(`File "${selectedFile.name}" uploaded successfully.`);
       triggerRefetch();
       setRetryAction(null);
     } catch (err) {
@@ -469,6 +470,9 @@ export default function DashboardPage() {
       setSelectedIds([]);
       triggerRefetch();
       setRetryAction(null);
+      if (result.deleted > 0) {
+        window.alert(`File #${fileId} deleted successfully.`);
+      }
     } catch (err) {
       setDeleteError(handleApiError(err));
       setRetryLabel('Retry Delete');
@@ -518,6 +522,9 @@ export default function DashboardPage() {
       setSelectedIds([]);
       triggerRefetch();
       setRetryAction(null);
+      if (result.deleted > 0) {
+        window.alert(`${result.deleted} selected file(s) deleted successfully.`);
+      }
     } catch (err) {
       setDeleteError(handleApiError(err));
       setRetryLabel('Retry Delete');
@@ -572,20 +579,23 @@ export default function DashboardPage() {
       return;
     }
 
+    const previousFiles = files;
     setTaggingId(fileId);
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.id === fileId
+          ? {
+              ...file,
+              tags: [...parseFileTags(file.tags), nextTag].join(', '),
+            }
+          : file,
+      ),
+    );
     try {
       await updateFileTag({ file_id: fileId, tag: nextTag });
-      setFiles((prev) =>
-        prev.map((file) =>
-          file.id === fileId
-            ? {
-                ...file,
-                tags: [...parseFileTags(file.tags), nextTag].join(', '),
-              }
-            : file,
-        ),
-      );
+      window.alert(`Tag "${nextTag}" added to file #${fileId}.`);
     } catch (err) {
+      setFiles(previousFiles);
       setTagError(handleApiError(err));
       triggerRefetch();
     } finally {
@@ -599,22 +609,25 @@ export default function DashboardPage() {
     if (isBackingUp || isRestoring || settingsBusy) return;
     const normalizedTag = normalizeTag(tag);
     if (!normalizedTag) return;
+    const previousFiles = files;
     setTaggingId(fileId);
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.id === fileId
+          ? {
+              ...file,
+              tags: parseFileTags(file.tags)
+                .filter((item) => item !== normalizedTag)
+                .join(', '),
+            }
+          : file,
+      ),
+    );
     try {
       await updateFileTag({ file_id: fileId, tag: normalizedTag, action: 'remove' });
-      setFiles((prev) =>
-        prev.map((file) =>
-          file.id === fileId
-            ? {
-                ...file,
-                tags: parseFileTags(file.tags)
-                  .filter((item) => item !== normalizedTag)
-                  .join(', '),
-              }
-            : file,
-        ),
-      );
+      window.alert(`Tag "${normalizedTag}" removed from file #${fileId}.`);
     } catch (err) {
+      setFiles(previousFiles);
       setTagError(handleApiError(err));
       triggerRefetch();
     } finally {
@@ -642,11 +655,14 @@ export default function DashboardPage() {
       return;
     }
 
+    const previousFiles = files;
     setRenamingId(fileId);
+    setFiles((prev) => prev.map((file) => (file.id === fileId ? { ...file, name: candidateName } : file)));
     try {
       await renameFile({ file_id: fileId, new_name: candidateName });
-      setFiles((prev) => prev.map((file) => (file.id === fileId ? { ...file, name: candidateName } : file)));
+      window.alert(`File #${fileId} renamed to "${candidateName}".`);
     } catch (err) {
+      setFiles(previousFiles);
       setRenameError(handleApiError(err));
       triggerRefetch();
     } finally {

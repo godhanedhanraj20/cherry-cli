@@ -17,6 +17,7 @@ export function Input({ error = false, disabled, ...props }: InputProps) {
         fontSize: 14,
         opacity: disabled ? 0.6 : 1,
         background: disabled ? '#f9fafb' : '#fff',
+        transition: 'all 160ms ease-in-out',
         ...(props.style || {}),
       }}
     />

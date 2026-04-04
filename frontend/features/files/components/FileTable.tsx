@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
 import type { FileItem } from '@/types/file';
 import type { CSSProperties, KeyboardEvent } from 'react';
 
@@ -78,7 +79,20 @@ export function FileTable({
   }, [editingNameId, renamingId]);
 
   if (loading) {
-    return <div className='text-gray-500 text-center py-4'>Loading files...</div>;
+    return (
+      <div style={{ display: 'grid', gap: 8 }}>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} style={{ display: 'grid', gridTemplateColumns: '24px 1.2fr 0.7fr 0.7fr 1fr 100px', gap: 12 }}>
+            <Skeleton height={16} />
+            <Skeleton height={16} />
+            <Skeleton height={16} />
+            <Skeleton height={16} />
+            <Skeleton height={16} />
+            <Skeleton height={16} />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   if (safeFiles.length === 0) {
@@ -144,7 +158,7 @@ export function FileTable({
             const rowTags = parseTags(file.tags);
 
             return (
-              <tr key={file.id}>
+              <tr key={file.id} style={rowStyle}>
                 <td style={tdStyle}>
                   <input
                     type='checkbox'
@@ -255,6 +269,10 @@ const thStyle: CSSProperties = {
   padding: '10px 12px',
   borderBottom: '1px solid #e5e7eb',
   fontSize: 13,
+  position: 'sticky',
+  top: 0,
+  background: '#fff',
+  zIndex: 1,
 };
 
 const tdStyle: CSSProperties = {
@@ -322,6 +340,7 @@ const fileNameButtonStyle: CSSProperties = {
   cursor: 'pointer',
   textAlign: 'left',
   color: '#2563eb',
+  transition: 'all 160ms ease-in-out',
 };
 
 const inlineInputStyle: CSSProperties = {
@@ -330,4 +349,8 @@ const inlineInputStyle: CSSProperties = {
   borderRadius: 6,
   padding: '4px 8px',
   fontSize: 13,
+};
+
+const rowStyle: CSSProperties = {
+  transition: 'background 160ms ease-in-out',
 };
