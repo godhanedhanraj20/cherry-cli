@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ROUTES } from '@/constants/routes';
 import { getAuthStatus as fetchAuthStatus, logout, updateConfig } from '@/features/auth/api';
 import { useAuthStore } from '@/features/auth/store';
 import {
@@ -24,6 +25,7 @@ import { FileTable } from '@/features/files/components/FileTable';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { handleApiError } from '@/services/error-handler';
+import { useAppStore } from '@/store/useAppStore';
 import type { FileItem, FileSort, FileTypeFilter } from '@/types/file';
 
 const DEFAULT_LIMIT = 20;
@@ -82,11 +84,13 @@ export default function DashboardPage() {
   const [apiIdInput, setApiIdInput] = useState('');
   const [apiHashInput, setApiHashInput] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const resetGlobalAppState = useAppStore((state) => state.resetAppState);
 
   const normalizeTag = (tag: string) => tag.trim().toLowerCase();
   const settingsBusy = isLoggingOut || isUpdatingConfig;
 
   const resetAppState = () => {
+    resetGlobalAppState();
     currentRequestIdRef.current += 1;
     backupRequestIdRef.current += 1;
     setFiles([]);
@@ -327,7 +331,7 @@ export default function DashboardPage() {
       clearSession();
       isLoggingOutRef.current = false;
       setIsLoggingOut(false);
-      router.push('/login');
+      router.replace(ROUTES.LOGIN);
     }
   };
 
@@ -353,7 +357,7 @@ export default function DashboardPage() {
       useAuthStore.getState().resetAuthState();
       clearSession();
       isLoggingOutRef.current = false;
-      router.push('/login');
+      router.replace(ROUTES.LOGIN);
     } catch (err) {
       setSettingsError(handleApiError(err));
     } finally {

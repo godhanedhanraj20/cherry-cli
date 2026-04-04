@@ -9,6 +9,7 @@ import { ROUTES } from '@/constants/routes';
 import { sendOtp } from '@/features/auth/api';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,8 +18,9 @@ export default function LoginPage() {
   const [apiId, setApiId] = useState('');
   const [apiHash, setApiHash] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const globalLoading = useAppStore((state) => state.globalLoading);
+  const setGlobalLoading = useAppStore((state) => state.setGlobalLoading);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -30,7 +32,7 @@ export default function LoginPage() {
       return;
     }
 
-    setLoading(true);
+    setGlobalLoading(true);
     try {
       const response = await sendOtp({
         api_id: parsedApiId,
@@ -43,7 +45,7 @@ export default function LoginPage() {
     } catch (err) {
       setError(handleApiError(err));
     } finally {
-      setLoading(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -76,7 +78,7 @@ export default function LoginPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' loading={loading}>
+        <Button type='submit' loading={globalLoading}>
           Send OTP
         </Button>
       </form>

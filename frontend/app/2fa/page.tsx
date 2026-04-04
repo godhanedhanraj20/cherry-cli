@@ -10,6 +10,7 @@ import { submit2FA } from '@/features/auth/api';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function TwoFAPage() {
   const router = useRouter();
@@ -17,18 +18,16 @@ export default function TwoFAPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
 
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const globalLoading = useAppStore((state) => state.globalLoading);
+  const setGlobalLoading = useAppStore((state) => state.setGlobalLoading);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!sessionId) {
-      router.replace(ROUTES.LOGIN);
-      return;
-    }
+    if (!sessionId) return;
 
     setError(null);
-    setLoading(true);
+    setGlobalLoading(true);
 
     try {
       await submit2FA({ session_id: sessionId, password });
@@ -36,7 +35,7 @@ export default function TwoFAPage() {
     } catch (err) {
       setError(handleApiError(err));
     } finally {
-      setLoading(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -66,7 +65,7 @@ export default function TwoFAPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' loading={loading}>
+        <Button type='submit' loading={globalLoading}>
           Submit 2FA
         </Button>
       </form>

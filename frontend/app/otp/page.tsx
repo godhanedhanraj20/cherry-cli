@@ -10,6 +10,7 @@ import { verifyOtp } from '@/features/auth/api';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useAuthSession } from '@/hooks/useAuthSession';
 import { handleApiError } from '@/services/error-handler';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function OtpPage() {
   const router = useRouter();
@@ -17,19 +18,16 @@ export default function OtpPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
 
   const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const globalLoading = useAppStore((state) => state.globalLoading);
+  const setGlobalLoading = useAppStore((state) => state.setGlobalLoading);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-
-    if (!sessionId) {
-      router.replace(ROUTES.LOGIN);
-      return;
-    }
+    if (!sessionId) return;
 
     setError(null);
-    setLoading(true);
+    setGlobalLoading(true);
 
     try {
       const response = await verifyOtp({ session_id: sessionId, otp: otp.trim() });
@@ -43,7 +41,7 @@ export default function OtpPage() {
     } catch (err) {
       setError(handleApiError(err));
     } finally {
-      setLoading(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -75,7 +73,7 @@ export default function OtpPage() {
 
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 
-        <Button type='submit' loading={loading}>
+        <Button type='submit' loading={globalLoading}>
           Verify OTP
         </Button>
       </form>
