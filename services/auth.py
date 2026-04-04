@@ -7,9 +7,11 @@ import os
 from utils.config_manager import load_config, save_config, SESSION_FILE
 from telegram.client import get_client
 from utils.errors import TSGError
+from utils.session_store import cleanup_expired_sessions
 
 async def check_auth_status() -> Dict[str, Any]:
     """Check if the user is already logged in and return status + limits."""
+    cleanup_expired_sessions(300)
     config = load_config()
     api_id = config.get("api_id")
     api_hash = config.get("api_hash")

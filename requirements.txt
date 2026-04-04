@@ -7,3 +7,5 @@ pytest-asyncio
 fastapi
 uvicorn
 python-multipart
+
+portalocker

@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  tsg-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+    volumes:
+      - .:/app
