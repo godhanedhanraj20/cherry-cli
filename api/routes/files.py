@@ -7,8 +7,19 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Upload
 from fastapi.responses import StreamingResponse
 
 from api.dependencies.auth import get_client
-from api.schemas.file import FileListResponse, FileSearchResponse, FileTypeValue, SortValue, UploadResponse
+from api.schemas.file import (
+    FileListResponse,
+    FileSearchResponse,
+    FileTypeValue,
+    RenameFileRequest,
+    RenameFileResponse,
+    SortValue,
+    UpdateTagRequest,
+    UpdateTagResponse,
+    UploadResponse,
+)
 from api.services_adapter.adapters import download_adapter, list_adapter, search_adapter, upload_adapter
+from services.metadata_service import manage_tags, rename_file
 from utils.errors import TSGError
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -48,9 +59,50 @@ async def search(
     return await search_adapter(client, query=query, limit=limit, page=page, sort=sort, file_type=type, tag=tag)
 
 
+@router.post("/tag", response_model=UpdateTagResponse)
+async def update_tag(payload: UpdateTagRequest):
+    action = "remove" if payload.action == "remove" else "add"
+    result = manage_tags([str(payload.file_id)], action=action, tag_name=payload.tag)[0]
+    return {
+        "success": True,
+        "file_id": int(result["file_id"]),
+        "action": action,
+        "tag": result["tag"],
+        "invalidate_cache": True,
+    }
+
+
+@router.post("/rename", response_model=RenameFileResponse)
+async def update_name(payload: RenameFileRequest):
+    result = rename_file(str(payload.file_id), payload.new_name)
+    return {
+        "success": True,
+        "file_id": int(result["file_id"]),
+        "custom_name": result["custom_name"],
+        "invalidate_cache": True,
+    }
+
+
 @router.get("/{file_id}/download")
 async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
     output_dir = tempfile.mkdtemp(prefix="tsg_api_download_")
+
+    def _cleanup_temp_dir(temp_path: str):
+        with suppress(OSError):
+            os.remove(temp_path)
+        with suppress(OSError):
+            os.rmdir(output_dir)
+
+    def _cleanup_stale_download_temps(prefix: str = "tsg_api_download_"):
+        base_dir = tempfile.gettempdir()
+        with suppress(OSError):
+            for name in os.listdir(base_dir):
+                if name.startswith(prefix):
+                    candidate = os.path.join(base_dir, name)
+                    if os.path.isdir(candidate):
+                        with suppress(OSError):
+                            os.rmdir(candidate)
+
     try:
         result = await download_adapter(client, file_id, output_dir)
     except TSGError:
@@ -61,20 +113,7 @@ async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
     path = result["path"]
     filename = os.path.basename(path)
 
-    def _cleanup():
-        with suppress(OSError):
-            if os.path.exists(path):
-                os.remove(path)
-        with suppress(OSError):
-            os.rmdir(output_dir)
-
     def _iter_file(chunk_size: int = 1024 * 1024):
-        cleaned = False
-        def _safe_cleanup():
-            nonlocal cleaned
-            if not cleaned:
-                _cleanup()
-                cleaned = True
         try:
             with open(path, "rb") as file_obj:
                 while True:
@@ -82,11 +121,9 @@ async def download(file_id: int = Path(..., gt=0), client=Depends(get_client)):
                     if not chunk:
                         break
                     yield chunk
-        except Exception:
-            _safe_cleanup()
-            raise
         finally:
-            _safe_cleanup()
+            _cleanup_temp_dir(path)
+            _cleanup_stale_download_temps()
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(

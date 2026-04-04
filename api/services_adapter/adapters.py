@@ -214,7 +214,7 @@ async def delete_adapter(client, file_ids: list[int]):
             failed += 1
             errors.append({"file_id": int(fid), "error": str(exc)})
 
-    payload = {"deleted": deleted, "failed": failed}
+    payload = {"deleted": deleted, "failed": failed, "invalidate_cache": True}
     if errors:
         payload["errors"] = errors
     logger.info("Delete operation end deleted=%s failed=%s", deleted, failed)

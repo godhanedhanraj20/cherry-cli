@@ -1,11 +1,13 @@
 import json
 import os
+import shutil
+from contextlib import suppress
 from typing import Any
 
 from pyrogram import Client
 
 from utils.errors import TSGError
-from utils.metadata_manager import METADATA_FILE
+from utils.metadata_manager import METADATA_FILE, atomic_write_json, validate_metadata
 
 
 async def backup_metadata(client: Client):
@@ -31,6 +33,12 @@ async def list_metadata_backups(client: Client) -> list[Any]:
     return backups
 
 
+
+def _cleanup_backup_temp_dir(temp_dir: str):
+    with suppress(OSError):
+        shutil.rmtree(temp_dir)
+
+
 async def restore_metadata_backup(client: Client, backup_id: int | None = None):
     backups = await list_metadata_backups(client)
     if not backups:
@@ -44,26 +52,28 @@ async def restore_metadata_backup(client: Client, backup_id: int | None = None):
             raise TSGError("Invalid backup ID")
 
     temp_dir = os.path.expanduser("~/.tsg-cli/tmp_backup")
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
+    os.makedirs(temp_dir, exist_ok=True)
 
     temp_file = os.path.join(temp_dir, "metadata_temp.json")
     downloaded_path = await client.download_media(selected_backup, file_name=temp_file)
 
     if not downloaded_path:
+        _cleanup_backup_temp_dir(temp_dir)
         raise TSGError("Failed to download backup file.")
 
     try:
         with open(downloaded_path, "r") as f:
-            json.load(f)
+            payload = json.load(f)
+        validate_metadata(payload)
     except Exception as exc:
+        _cleanup_backup_temp_dir(temp_dir)
         raise TSGError("Backup file is corrupted") from exc
 
-    os.replace(downloaded_path, METADATA_FILE)
-
     try:
-        os.rmdir(temp_dir)
-    except OSError:
-        pass
+        atomic_write_json(METADATA_FILE, payload)
+    except Exception as exc:
+        raise TSGError("Failed to restore metadata backup.") from exc
+    finally:
+        _cleanup_backup_temp_dir(temp_dir)
 
     return {"status": "success", "backup_id": selected_backup.id}
