@@ -68,6 +68,8 @@ export default function OtpPage() {
           placeholder='Enter 5-digit OTP'
           value={otp}
           onChange={(event) => setOtp(event.target.value)}
+          disabled={globalLoading}
+          error={Boolean(error)}
           required
         />
 

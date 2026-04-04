@@ -59,6 +59,8 @@ export default function LoginPage() {
           placeholder='API_ID'
           value={apiId}
           onChange={(event) => setApiId(event.target.value)}
+          disabled={globalLoading}
+          error={Boolean(error)}
           required
         />
         <Input
@@ -66,6 +68,8 @@ export default function LoginPage() {
           placeholder='API_HASH'
           value={apiHash}
           onChange={(event) => setApiHash(event.target.value)}
+          disabled={globalLoading}
+          error={Boolean(error)}
           required
         />
         <Input
@@ -73,6 +77,8 @@ export default function LoginPage() {
           placeholder='Phone number (e.g. +1234567890)'
           value={phoneNumber}
           onChange={(event) => setPhoneNumber(event.target.value)}
+          disabled={globalLoading}
+          error={Boolean(error)}
           required
         />
 

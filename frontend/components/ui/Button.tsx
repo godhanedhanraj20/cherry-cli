@@ -25,7 +25,24 @@ export function Button({ children, loading = false, disabled, ...props }: Button
         ...(props.style || {}),
       }}
     >
-      {loading ? 'Loading...' : children}
+      {loading ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span
+            aria-hidden='true'
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              border: '2px solid rgba(255,255,255,0.6)',
+              borderTopColor: '#fff',
+              display: 'inline-block',
+            }}
+          />
+          Loading...
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 }

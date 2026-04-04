@@ -659,9 +659,10 @@ export default function DashboardPage() {
           <Button
             onClick={handleBackupNow}
             disabled={isBackingUp || isRestoring || settingsBusy}
+            loading={isBackingUp}
             style={{ width: 160 }}
           >
-            {isBackingUp ? 'Backing up...' : 'Backup Metadata'}
+            Backup Metadata
           </Button>
           <Button
             onClick={handleToggleBackupPanel}
@@ -673,15 +674,16 @@ export default function DashboardPage() {
           <Button onClick={handleToggleSettingsPanel} disabled={settingsBusy} style={{ width: 110 }}>
             {showSettingsPanel ? 'Hide Settings' : 'Settings'}
           </Button>
-          <Button onClick={handleLogout} disabled={settingsBusy} style={{ width: 100 }}>
-            {isLoggingOut ? 'Logging out...' : 'Logout'}
+          <Button onClick={handleLogout} disabled={settingsBusy} loading={isLoggingOut} style={{ width: 100 }}>
+            Logout
           </Button>
           <Button
             onClick={handleUploadClick}
             disabled={uploading || deletingBulk || deletingId !== null || isBackingUp || isRestoring || settingsBusy}
+            loading={uploading}
             style={{ width: 120 }}
           >
-            {uploading ? 'Uploading...' : 'Upload'}
+            Upload
           </Button>
           <input ref={fileInputRef} type='file' onChange={handleFileChange} style={{ display: 'none' }} />
         </header>
@@ -766,6 +768,7 @@ export default function DashboardPage() {
                   onChange={(e) => setApiIdInput(e.target.value)}
                   placeholder='API ID'
                   disabled={settingsBusy}
+                  error={Boolean(settingsError)}
                 />
                 <Input
                   type='text'
@@ -773,9 +776,10 @@ export default function DashboardPage() {
                   onChange={(e) => setApiHashInput(e.target.value)}
                   placeholder='API HASH'
                   disabled={settingsBusy}
+                  error={Boolean(settingsError)}
                 />
-                <Button onClick={handleUpdateConfig} disabled={settingsBusy} style={{ width: 150 }}>
-                  {isUpdatingConfig ? 'Updating...' : 'Update Config'}
+                <Button onClick={handleUpdateConfig} disabled={settingsBusy} loading={isUpdatingConfig} style={{ width: 150 }}>
+                  Update Config
                 </Button>
               </div>
             </section>
@@ -812,9 +816,10 @@ export default function DashboardPage() {
                       <Button
                         onClick={() => handleRestoreBackup(backup.id)}
                         disabled={isRestoring || isBackingUp}
+                        loading={isRestoring}
                         style={{ width: 90 }}
                       >
-                        {isRestoring ? '...' : 'Restore'}
+                        Restore
                       </Button>
                     </div>
                   ))}
@@ -837,33 +842,32 @@ export default function DashboardPage() {
               <Button
                 onClick={handleDeleteSelected}
                 disabled={deletingBulk || uploading || deletingId !== null || isBackingUp || isRestoring || settingsBusy}
+                loading={deletingBulk}
                 style={{ width: 180 }}
               >
-                {deletingBulk ? 'Deleting selected...' : `Delete Selected (${selectedIds.length})`}
+                {`Delete Selected (${selectedIds.length})`}
               </Button>
             </div>
           ) : null}
 
-          {loading ? (
-            <p>Loading files...</p>
-          ) : (
-            <FileTable
-              files={files}
-              emptyMessage={isSearchMode ? 'No results found' : 'No files found'}
-              selectedIds={selectedIds}
-              deletingId={deletingId}
-              taggingId={taggingId}
-              renamingId={renamingId}
-              activeTagFilters={tagFilters}
-              onSelect={handleSelect}
-              onSelectAll={handleSelectAll}
-              onDelete={handleDeleteSingle}
-              onTagClick={handleTagClick}
-              onAddTag={handleAddTag}
-              onRemoveTag={handleRemoveTag}
-              onRename={handleRename}
-            />
-          )}
+          <FileTable
+            files={files}
+            loading={loading}
+            emptyMessage={isSearchMode ? 'No results found' : 'No files found'}
+            emptyHint={isSearchMode ? 'Try different filters or keywords' : 'Upload your first file to get started'}
+            selectedIds={selectedIds}
+            deletingId={deletingId}
+            taggingId={taggingId}
+            renamingId={renamingId}
+            activeTagFilters={tagFilters}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
+            onDelete={handleDeleteSingle}
+            onTagClick={handleTagClick}
+            onAddTag={handleAddTag}
+            onRemoveTag={handleRemoveTag}
+            onRename={handleRename}
+          />
 
           <div style={{ display: 'flex', gap: 8 }}>
             <Button

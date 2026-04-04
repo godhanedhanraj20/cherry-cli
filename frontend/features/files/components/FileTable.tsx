@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/Button';
 import type { FileItem } from '@/types/file';
 import type { CSSProperties, KeyboardEvent } from 'react';
 
@@ -11,6 +12,8 @@ interface FileTableProps {
   files: FileItem[];
   columns?: ColumnConfig[];
   emptyMessage?: string;
+  emptyHint?: string;
+  loading?: boolean;
   selectedIds: number[];
   deletingId: number | null;
   taggingId: number | null;
@@ -26,7 +29,6 @@ interface FileTableProps {
 }
 
 const defaultColumns: ColumnConfig[] = [
-  { key: 'id', label: 'ID' },
   { key: 'name', label: 'Name' },
   { key: 'size', label: 'Size' },
   { key: 'date', label: 'Date' },
@@ -48,6 +50,8 @@ export function FileTable({
   files,
   columns = defaultColumns,
   emptyMessage = 'No files found',
+  emptyHint,
+  loading = false,
   selectedIds,
   deletingId,
   taggingId,
@@ -72,8 +76,17 @@ export function FileTable({
     setEditingName('');
   }, [editingNameId, renamingId]);
 
+  if (loading) {
+    return <div className='text-gray-500 text-center py-4'>Loading files...</div>;
+  }
+
   if (files.length === 0) {
-    return <div className='text-gray-500 text-center py-4'>{emptyMessage}</div>;
+    return (
+      <div className='text-gray-500 text-center py-4'>
+        <div>{emptyMessage}</div>
+        {emptyHint ? <div style={{ fontSize: 12, marginTop: 4 }}>{emptyHint}</div> : null}
+      </div>
+    );
   }
 
   const allSelected = files.length > 0 && files.every((file) => selectedIds.includes(file.id));
@@ -212,22 +225,20 @@ export function FileTable({
                   </td>
                 ))}
                 <td style={tdStyle}>
-                  <button
+                  <Button
                     type='button'
                     onClick={() => onDelete(file.id)}
                     disabled={isDeleting}
+                    loading={isDeleting}
                     style={{
                       border: '1px solid #ef4444',
                       background: '#fff',
                       color: '#ef4444',
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      cursor: isDeleting ? 'not-allowed' : 'pointer',
-                      opacity: isDeleting ? 0.6 : 1,
+                      width: 100,
                     }}
                   >
-                    {isDeleting ? 'Deleting...' : 'Delete'}
-                  </button>
+                    Delete
+                  </Button>
                 </td>
               </tr>
             );

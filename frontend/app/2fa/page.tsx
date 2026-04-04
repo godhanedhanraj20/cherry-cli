@@ -60,6 +60,8 @@ export default function TwoFAPage() {
           placeholder='Password'
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          disabled={globalLoading}
+          error={Boolean(error)}
           required
         />
 
