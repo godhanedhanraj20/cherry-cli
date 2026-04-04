@@ -51,12 +51,8 @@ export const renameFile = async (payload: RenameFileRequest) => {
 
 export interface BackupItem {
   id: string;
-  date?: string;
-  size?: string;
-}
-
-export interface ListBackupsResponse {
-  backups: BackupItem[];
+  date: string;
+  size: number;
 }
 
 export const backupMetadata = async () => {
@@ -65,8 +61,21 @@ export const backupMetadata = async () => {
 };
 
 export const listBackups = async () => {
-  const response = await api.get<ListBackupsResponse>('/metadata/backups');
-  return response.data;
+  const response = await api.get('/metadata/backups');
+  const payload = response.data;
+  const rawItems: unknown[] = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.backups)
+      ? payload.backups
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : [];
+
+  return rawItems.map((item: any): BackupItem => ({
+    id: String(item?.id ?? item?.backup_id ?? item?.message_id ?? ''),
+    date: String(item?.date ?? item?.created_at ?? item?.timestamp ?? ''),
+    size: Number(item?.size ?? item?.bytes ?? item?.raw_size ?? 0),
+  }));
 };
 
 export const restoreBackup = async (id: string) => {

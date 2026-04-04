@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import {
   backupMetadata,
+  type BackupItem,
   deleteFiles,
   getFiles,
   listBackups,
@@ -27,14 +28,15 @@ const MAX_BACKUPS = 20;
 
 interface BackupEntry {
   id: string;
-  date?: string;
-  size?: string;
+  date: string;
+  size: number;
 }
 
 export default function DashboardPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentRequestIdRef = useRef(0);
+  const backupRequestIdRef = useRef(0);
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,21 +172,26 @@ export default function DashboardPage() {
   };
 
   const loadBackups = async () => {
+    const requestId = ++backupRequestIdRef.current;
     setBackupError(null);
     setLoadingBackups(true);
     try {
       const response = await listBackups();
-      const normalized = [...(response.backups ?? [])]
+      const normalized: BackupEntry[] = [...response]
+        .filter((item: BackupItem) => Boolean(item.id))
         .sort((a, b) => {
           const aTime = a.date ? new Date(a.date).getTime() : 0;
           const bTime = b.date ? new Date(b.date).getTime() : 0;
           return bTime - aTime;
         })
         .slice(0, MAX_BACKUPS);
+      if (requestId !== backupRequestIdRef.current) return;
       setBackupList(normalized);
     } catch (err) {
+      if (requestId !== backupRequestIdRef.current) return;
       setBackupError(handleApiError(err));
     } finally {
+      if (requestId !== backupRequestIdRef.current) return;
       setLoadingBackups(false);
     }
   };
@@ -209,9 +216,13 @@ export default function DashboardPage() {
   const handleToggleBackupPanel = async () => {
     const next = !showBackupPanel;
     setShowBackupPanel(next);
-    if (next) {
-      await loadBackups();
+    if (!next) {
+      backupRequestIdRef.current += 1;
+      setBackupList([]);
+      setLoadingBackups(false);
+      return;
     }
+    await loadBackups();
   };
 
   const handleRestoreBackup = async (backupId: string) => {
@@ -620,7 +631,7 @@ export default function DashboardPage() {
           {showBackupPanel ? (
             <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <strong>Backup History</strong>
+                <strong>Backup History ({backupList.length})</strong>
                 <Button onClick={loadBackups} disabled={loadingBackups || isRestoring || isBackingUp} style={{ width: 100 }}>
                   {loadingBackups ? 'Loading...' : 'Refresh'}
                 </Button>
@@ -643,8 +654,8 @@ export default function DashboardPage() {
                       }}
                     >
                       <span style={{ fontFamily: 'monospace' }}>{backup.id}</span>
-                      <span>{backup.date ?? '-'}</span>
-                      <span>{backup.size ?? '-'}</span>
+                      <span>{backup.date ? new Date(backup.date).toLocaleString() : '-'}</span>
+                      <span>{backup.size > 0 ? `${backup.size} B` : '-'}</span>
                       <Button
                         onClick={() => handleRestoreBackup(backup.id)}
                         disabled={isRestoring || isBackingUp}
