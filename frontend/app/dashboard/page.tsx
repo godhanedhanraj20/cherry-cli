@@ -47,6 +47,10 @@ export default function DashboardPage() {
   const backupRequestIdRef = useRef(0);
   const isLoggingOutRef = useRef(false);
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const lastFetchKeyRef = useRef('');
+  const lastReloadKeyRef = useRef<number | null>(null);
+  const listCacheRef = useRef<Record<string, FileItem[]>>({});
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,6 +92,7 @@ export default function DashboardPage() {
   const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
   const [retryLabel, setRetryLabel] = useState('Retry');
   const [hasCriticalError, setHasCriticalError] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const resetGlobalAppState = useAppStore((state) => state.resetAppState);
 
   const normalizeTag = (tag: string) => tag.trim().toLowerCase();
@@ -153,7 +158,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const delay = setTimeout(() => {
       setDebouncedQuery(query.trim());
-    }, 500);
+    }, 300);
 
     return () => clearTimeout(delay);
   }, [query]);
@@ -173,6 +178,17 @@ export default function DashboardPage() {
   }, [page, sort, typeFilter, debouncedTagFilters, debouncedQuery]);
 
   useEffect(() => {
+    const updateOnlineState = () => setIsOffline(!navigator.onLine);
+    updateOnlineState();
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isAuthorized) {
       return;
     }
@@ -182,6 +198,24 @@ export default function DashboardPage() {
     const fetchFiles = async () => {
       const requestId = ++currentRequestIdRef.current;
       const start = Date.now();
+      const params = {
+        page,
+        limit: DEFAULT_LIMIT,
+        sort,
+        ...(hasQuery && { query: debouncedQuery }),
+        ...(typeFilter && { type: typeFilter }),
+        ...(debouncedTagFilters.length > 0 && { tag: debouncedTagFilters.join(',') }),
+      };
+      const fetchKey = JSON.stringify(params);
+      if (fetchKey === lastFetchKeyRef.current && lastReloadKeyRef.current === reloadKey) return;
+      lastFetchKeyRef.current = fetchKey;
+      lastReloadKeyRef.current = reloadKey;
+
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
       setLoading(true);
       setError(null);
       if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
@@ -192,25 +226,22 @@ export default function DashboardPage() {
         setRetryLabel('Retry Search');
         setRetryAction(() => triggerRefetch);
       }, 15000);
+      const cached = listCacheRef.current[fetchKey];
+      if (cached) {
+        setFiles(cached);
+      }
       try {
-        const params = {
-          page,
-          limit: DEFAULT_LIMIT,
-          sort,
-          ...(hasQuery && { query: debouncedQuery }),
-          ...(typeFilter && { type: typeFilter }),
-          ...(debouncedTagFilters.length > 0 && { tag: debouncedTagFilters.join(',') }),
-        };
-
         const shouldUseSearch = isSearchMode && Boolean(hasQuery || typeFilter || debouncedTagFilters.length > 0);
-        const response = shouldUseSearch ? await searchFiles(params) : await getFiles(params);
+        const response = shouldUseSearch ? await searchFiles(params, { signal: controller.signal }) : await getFiles(params, { signal: controller.signal });
         const normalizedFiles = 'files' in response ? response.files ?? [] : response.results ?? [];
 
         if (!isMounted) return;
         if (requestId !== currentRequestIdRef.current) return;
         setFiles(normalizedFiles);
+        listCacheRef.current[fetchKey] = normalizedFiles;
         setRetryAction(null);
       } catch (err) {
+        if ((err as { code?: string })?.code === 'ERR_CANCELED') return;
         if (!isMounted) return;
         if (requestId !== currentRequestIdRef.current) return;
         setError(handleApiError(err));
@@ -234,6 +265,12 @@ export default function DashboardPage() {
     fetchFiles();
 
     return () => {
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
       isMounted = false;
     };
   }, [debouncedQuery, debouncedTagFilters, hasQuery, isAuthorized, isSearchMode, page, reloadKey, sort, typeFilter]);
@@ -819,6 +856,7 @@ export default function DashboardPage() {
           </div>
 
           {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
+          {isOffline ? <div className='text-amber-600'>You are offline. Some actions may not work.</div> : null}
           {uploadError ? <div className='text-red-500'>{uploadError}</div> : null}
           {deleteError ? <div className='text-red-500'>{deleteError}</div> : null}
           {tagError ? <div className='text-red-500'>{tagError}</div> : null}

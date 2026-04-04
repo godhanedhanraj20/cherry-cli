@@ -11,13 +11,17 @@ import type {
   UploadFileResponse,
 } from '@/types/file';
 
-export const getFiles = async (params: GetFilesParams) => {
-  const response = await api.get<GetFilesResponse>(API_ROUTES.FILES, { params });
+interface RequestOptions {
+  signal?: AbortSignal;
+}
+
+export const getFiles = async (params: GetFilesParams, options?: RequestOptions) => {
+  const response = await api.get<GetFilesResponse>(API_ROUTES.FILES, { params, signal: options?.signal });
   return response.data;
 };
 
-export const searchFiles = async (params: GetFilesParams) => {
-  const response = await api.get<SearchFilesResponse>(API_ROUTES.FILES_SEARCH, { params });
+export const searchFiles = async (params: GetFilesParams, options?: RequestOptions) => {
+  const response = await api.get<SearchFilesResponse>(API_ROUTES.FILES_SEARCH, { params, signal: options?.signal });
   return response.data;
 };
 

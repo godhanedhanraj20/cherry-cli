@@ -15,6 +15,9 @@ let hasShownSessionExpired = false;
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+      return Promise.reject(error);
+    }
     const apiMessage = error?.response?.data?.error;
     const fallbackMessage = typeof apiMessage === 'string' && apiMessage.trim() ? apiMessage : 'Something went wrong';
 
