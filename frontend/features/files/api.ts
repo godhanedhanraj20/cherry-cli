@@ -48,3 +48,28 @@ export const renameFile = async (payload: RenameFileRequest) => {
   const response = await api.post(`${API_ROUTES.FILES}/rename`, payload);
   return response.data;
 };
+
+export interface BackupItem {
+  id: string;
+  date?: string;
+  size?: string;
+}
+
+export interface ListBackupsResponse {
+  backups: BackupItem[];
+}
+
+export const backupMetadata = async () => {
+  const response = await api.post('/metadata/backup');
+  return response.data;
+};
+
+export const listBackups = async () => {
+  const response = await api.get<ListBackupsResponse>('/metadata/backups');
+  return response.data;
+};
+
+export const restoreBackup = async (id: string) => {
+  const response = await api.post('/metadata/restore', { backup_id: id });
+  return response.data;
+};

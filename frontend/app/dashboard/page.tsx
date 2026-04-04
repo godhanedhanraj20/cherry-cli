@@ -5,7 +5,17 @@ import type { CSSProperties } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { deleteFiles, getFiles, renameFile, searchFiles, updateFileTag, uploadFile } from '@/features/files/api';
+import {
+  backupMetadata,
+  deleteFiles,
+  getFiles,
+  listBackups,
+  renameFile,
+  restoreBackup,
+  searchFiles,
+  updateFileTag,
+  uploadFile,
+} from '@/features/files/api';
 import { FileTable } from '@/features/files/components/FileTable';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { handleApiError } from '@/services/error-handler';
@@ -13,6 +23,13 @@ import type { FileItem, FileSort, FileTypeFilter } from '@/types/file';
 
 const DEFAULT_LIMIT = 20;
 const MIN_LOADING_TIME = 300;
+const MAX_BACKUPS = 20;
+
+interface BackupEntry {
+  id: string;
+  date?: string;
+  size?: string;
+}
 
 export default function DashboardPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
@@ -42,6 +59,12 @@ export default function DashboardPage() {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [taggingId, setTaggingId] = useState<number | null>(null);
   const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [backupList, setBackupList] = useState<BackupEntry[]>([]);
+  const [showBackupPanel, setShowBackupPanel] = useState(false);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const normalizeTag = (tag: string) => tag.trim().toLowerCase();
@@ -137,8 +160,84 @@ export default function DashboardPage() {
 
   const triggerRefetch = () => setReloadKey((prev) => prev + 1);
 
+  const resetSearchFilters = () => {
+    setQuery('');
+    setTagInput('');
+    setTagFilters([]);
+    setTypeFilter('');
+    setPage(1);
+    setSelectedIds([]);
+  };
+
+  const loadBackups = async () => {
+    setBackupError(null);
+    setLoadingBackups(true);
+    try {
+      const response = await listBackups();
+      const normalized = [...(response.backups ?? [])]
+        .sort((a, b) => {
+          const aTime = a.date ? new Date(a.date).getTime() : 0;
+          const bTime = b.date ? new Date(b.date).getTime() : 0;
+          return bTime - aTime;
+        })
+        .slice(0, MAX_BACKUPS);
+      setBackupList(normalized);
+    } catch (err) {
+      setBackupError(handleApiError(err));
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const handleBackupNow = async () => {
+    if (isBackingUp || isRestoring) return;
+    setBackupError(null);
+    setIsBackingUp(true);
+    try {
+      await backupMetadata();
+      window.alert('Metadata backup created successfully.');
+      if (showBackupPanel) {
+        await loadBackups();
+      }
+    } catch (err) {
+      setBackupError(handleApiError(err));
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleToggleBackupPanel = async () => {
+    const next = !showBackupPanel;
+    setShowBackupPanel(next);
+    if (next) {
+      await loadBackups();
+    }
+  };
+
+  const handleRestoreBackup = async (backupId: string) => {
+    if (isRestoring || isBackingUp) return;
+    const confirmed = window.confirm('⚠️ Restore Backup?\n\nThis will overwrite your current metadata.');
+    if (!confirmed) return;
+
+    setBackupError(null);
+    setIsRestoring(true);
+    try {
+      await restoreBackup(backupId);
+      resetSearchFilters();
+      triggerRefetch();
+      window.alert('Metadata restored successfully.');
+      if (showBackupPanel) {
+        await loadBackups();
+      }
+    } catch (err) {
+      setBackupError(handleApiError(err));
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   const handleUploadClick = () => {
-    if (uploading) return;
+    if (uploading || isBackingUp || isRestoring) return;
     fileInputRef.current?.click();
   };
 
@@ -175,7 +274,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSingle = async (fileId: number) => {
-    if (deletingId !== null || deletingBulk) return;
+    if (deletingId !== null || deletingBulk || isBackingUp || isRestoring) return;
 
     const confirmed = window.confirm(`Delete file ${fileId}?`);
     if (!confirmed) return;
@@ -221,7 +320,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSelected = async () => {
-    if (selectedIds.length === 0 || deletingBulk || deletingId !== null) return;
+    if (selectedIds.length === 0 || deletingBulk || deletingId !== null || isBackingUp || isRestoring) return;
 
     const confirmed = window.confirm(`Delete ${selectedIds.length} selected file(s)?`);
     if (!confirmed) return;
@@ -279,6 +378,7 @@ export default function DashboardPage() {
   const handleAddTag = async (fileId: number, rawTag: string) => {
     setTagError(null);
     setRenameError(null);
+    if (isBackingUp || isRestoring) return;
     const nextTag = normalizeTag(rawTag);
     if (!nextTag) {
       setTagError('Tag cannot be empty');
@@ -316,6 +416,7 @@ export default function DashboardPage() {
   const handleRemoveTag = async (fileId: number, tag: string) => {
     setTagError(null);
     setRenameError(null);
+    if (isBackingUp || isRestoring) return;
     const normalizedTag = normalizeTag(tag);
     if (!normalizedTag) return;
     setTaggingId(fileId);
@@ -344,6 +445,7 @@ export default function DashboardPage() {
   const handleRename = async (fileId: number, newName: string) => {
     setTagError(null);
     setRenameError(null);
+    if (isBackingUp || isRestoring) return;
     const trimmed = newName.trim();
     if (!trimmed) {
       setRenameError('Name cannot be empty');
@@ -399,7 +501,7 @@ export default function DashboardPage() {
           style={{
             borderBottom: '1px solid #e5e7eb',
             display: 'grid',
-            gridTemplateColumns: '140px 1fr auto auto',
+            gridTemplateColumns: '140px 1fr auto auto auto auto',
             alignItems: 'center',
             gap: 12,
             padding: '0 16px',
@@ -420,12 +522,30 @@ export default function DashboardPage() {
               setQuery('');
               setPage(1);
             }}
-            disabled={loading || query.length === 0}
+            disabled={loading || query.length === 0 || isBackingUp || isRestoring}
             style={{ width: 56 }}
           >
             ×
           </Button>
-          <Button onClick={handleUploadClick} disabled={uploading || deletingBulk || deletingId !== null} style={{ width: 120 }}>
+          <Button
+            onClick={handleBackupNow}
+            disabled={isBackingUp || isRestoring}
+            style={{ width: 160 }}
+          >
+            {isBackingUp ? 'Backing up...' : 'Backup Metadata'}
+          </Button>
+          <Button
+            onClick={handleToggleBackupPanel}
+            disabled={isBackingUp || isRestoring}
+            style={{ width: 140 }}
+          >
+            {showBackupPanel ? 'Hide Backups' : 'Backup History'}
+          </Button>
+          <Button
+            onClick={handleUploadClick}
+            disabled={uploading || deletingBulk || deletingId !== null || isBackingUp || isRestoring}
+            style={{ width: 120 }}
+          >
             {uploading ? 'Uploading...' : 'Upload'}
           </Button>
           <input ref={fileInputRef} type='file' onChange={handleFileChange} style={{ display: 'none' }} />
@@ -481,7 +601,10 @@ export default function DashboardPage() {
             </label>
 
             <div style={{ display: 'grid', alignContent: 'end' }}>
-              <Button onClick={() => setPage(1)} disabled={loading || uploading || deletingBulk || deletingId !== null}>
+              <Button
+                onClick={() => setPage(1)}
+                disabled={loading || uploading || deletingBulk || deletingId !== null || isBackingUp || isRestoring}
+              >
                 Reset Page
               </Button>
             </div>
@@ -492,6 +615,49 @@ export default function DashboardPage() {
           {deleteError ? <div className='text-red-500'>{deleteError}</div> : null}
           {tagError ? <div className='text-red-500'>{tagError}</div> : null}
           {renameError ? <div className='text-red-500'>{renameError}</div> : null}
+          {backupError ? <div className='text-red-500'>{backupError}</div> : null}
+
+          {showBackupPanel ? (
+            <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <strong>Backup History</strong>
+                <Button onClick={loadBackups} disabled={loadingBackups || isRestoring || isBackingUp} style={{ width: 100 }}>
+                  {loadingBackups ? 'Loading...' : 'Refresh'}
+                </Button>
+              </div>
+              {loadingBackups ? <div>Loading backups...</div> : null}
+              {!loadingBackups && backupList.length === 0 ? <div className='text-gray-500'>No backups found</div> : null}
+              {!loadingBackups && backupList.length > 0 ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {backupList.map((backup) => (
+                    <div
+                      key={backup.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto auto auto',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 10px',
+                        border: '1px solid #f1f5f9',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <span style={{ fontFamily: 'monospace' }}>{backup.id}</span>
+                      <span>{backup.date ?? '-'}</span>
+                      <span>{backup.size ?? '-'}</span>
+                      <Button
+                        onClick={() => handleRestoreBackup(backup.id)}
+                        disabled={isRestoring || isBackingUp}
+                        style={{ width: 90 }}
+                      >
+                        {isRestoring ? '...' : 'Restore'}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {isSearchMode ? (
             <div className='text-sm text-gray-500 mb-2'>
@@ -506,7 +672,7 @@ export default function DashboardPage() {
             <div>
               <Button
                 onClick={handleDeleteSelected}
-                disabled={deletingBulk || uploading || deletingId !== null}
+                disabled={deletingBulk || uploading || deletingId !== null || isBackingUp || isRestoring}
                 style={{ width: 180 }}
               >
                 {deletingBulk ? 'Deleting selected...' : `Delete Selected (${selectedIds.length})`}
@@ -538,14 +704,14 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
               onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={loading || page === 1 || uploading || deletingBulk || deletingId !== null}
+              disabled={loading || page === 1 || uploading || deletingBulk || deletingId !== null || isBackingUp || isRestoring}
               style={{ width: 140 }}
             >
               Previous page
             </Button>
             <Button
               onClick={() => setPage((prev) => prev + 1)}
-              disabled={loading || uploading || deletingBulk || deletingId !== null}
+              disabled={loading || uploading || deletingBulk || deletingId !== null || isBackingUp || isRestoring}
               style={{ width: 140 }}
             >
               Next page
