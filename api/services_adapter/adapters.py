@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import time
@@ -29,6 +30,7 @@ MAX_2FA_ATTEMPTS = 5
 OTP_RATE_LIMIT_SECONDS = 30
 _LAST_OTP_REQUEST_TS: dict[str, float] = {}
 logger = logging.getLogger(__name__)
+REQUEST_TIMEOUT_SECONDS = 30
 
 
 def _noop_log_cb(_: str, __: str):
@@ -183,7 +185,7 @@ async def upload_adapter(client, file: UploadFile):
                     break
                 out.write(chunk)
 
-        metadata = await upload_file(client, tmp_path, _noop_log_cb)
+        metadata = await asyncio.wait_for(upload_file(client, tmp_path, _noop_log_cb), timeout=REQUEST_TIMEOUT_SECONDS)
         logger.info("Upload end filename=%s file_id=%s", file.filename, metadata.get("id"))
         return {
             "file_id": metadata["id"],
@@ -191,6 +193,8 @@ async def upload_adapter(client, file: UploadFile):
             "size": metadata["size"],
             "invalidate_cache": True,
         }
+    except asyncio.TimeoutError as exc:
+        raise TSGError("Upload request timed out") from exc
     finally:
         await file.close()
         with suppress(OSError):
@@ -203,13 +207,19 @@ async def list_adapter(client, limit: int = 50, page: int = 1, sort: str = "date
 
 
 async def search_adapter(client, query: Optional[str], limit: int = 50, page: int = 1, sort: str = "date", file_type: Optional[str] = None, tag: Optional[str] = None):
-    results = await search_files(client, query=query, limit=limit, page=page, sort_by=sort, file_type=file_type, tag=tag, debug=False)
-    return {"results": [FileItem(**f) for f in results]}
+    try:
+        results = await asyncio.wait_for(search_files(client, query=query, limit=limit, page=page, sort_by=sort, file_type=file_type, tag=tag, debug=False), timeout=REQUEST_TIMEOUT_SECONDS)
+        return {"results": [FileItem(**f) for f in results]}
+    except asyncio.TimeoutError as exc:
+        raise TSGError("Search request timed out") from exc
 
 
 async def download_adapter(client, file_id: int, output_path: str):
     logger.info("Download start file_id=%s", file_id)
-    path = await download_file(client, file_id, output_path, _noop_log_cb)
+    try:
+        path = await asyncio.wait_for(download_file(client, file_id, output_path, _noop_log_cb), timeout=REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as exc:
+        raise TSGError("Download request timed out") from exc
     logger.info("Download end file_id=%s path=%s", file_id, path)
     return {"path": path}
 

@@ -22,12 +22,14 @@ from api.schemas.file import (
 )
 from api.services_adapter.adapters import download_adapter, list_adapter, search_adapter, upload_adapter
 from services.auth import get_authenticated_client
+from services.file_service import clear_search_cache
 from services.metadata_service import manage_tags, rename_file
 from utils.errors import TSGError
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
 _last_cleanup = 0.0
+MAX_BACKGROUND_UPLOAD_SIZE = 500 * 1024 * 1024
 
 
 
@@ -78,6 +80,7 @@ async def search(
 async def update_tag(payload: UpdateTagRequest):
     action = "remove" if payload.action == "remove" else "add"
     result = manage_tags([str(payload.file_id)], action=action, tag_name=payload.tag)[0]
+    clear_search_cache()
     return {
         "success": True,
         "file_id": int(result["file_id"]),
@@ -90,6 +93,7 @@ async def update_tag(payload: UpdateTagRequest):
 @router.post("/rename", response_model=RenameFileResponse)
 async def update_name(payload: RenameFileRequest):
     result = rename_file(str(payload.file_id), payload.new_name)
+    clear_search_cache()
     return {
         "success": True,
         "file_id": int(result["file_id"]),
@@ -168,13 +172,21 @@ async def upload_background(background_tasks: BackgroundTasks, file: UploadFile 
     suffix = os.path.splitext(file.filename)[-1] if file.filename else ""
     fd, tmp_path = tempfile.mkstemp(prefix="tsg_api_bg_upload_", suffix=suffix)
     os.close(fd)
+    size = 0
     try:
         with open(tmp_path, "wb") as out:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
+                size += len(chunk)
+                if size > MAX_BACKGROUND_UPLOAD_SIZE:
+                    raise HTTPException(status_code=400, detail={"error": "File too large"})
                 out.write(chunk)
+    except HTTPException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
     finally:
         await file.close()
 

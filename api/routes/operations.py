@@ -6,6 +6,7 @@ from api.schemas.file import DeleteRequest, DeleteResponse
 from api.services_adapter.adapters import delete_adapter
 from services.auth import get_authenticated_client
 from services.backup_service import backup_metadata, restore_metadata_backup
+from services.file_service import clear_search_cache
 
 router = APIRouter(tags=["operations"])
 
@@ -26,6 +27,7 @@ async def _run_restore_task(backup_id: int | None):
     client = await get_authenticated_client()
     try:
         await restore_metadata_backup(client, backup_id=backup_id)
+        clear_search_cache()
     finally:
         await client.disconnect()
 

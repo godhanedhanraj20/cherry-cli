@@ -17,6 +17,8 @@ def _connect() -> sqlite3.Connection:
     _ensure_config_dir()
     conn = sqlite3.connect(SESSION_DB_FILE)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS sessions (

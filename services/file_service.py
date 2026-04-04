@@ -9,7 +9,7 @@ from utils.parser import extract_message_metadata, format_size
 from utils.errors import TSGError
 from utils.metadata_manager import get_custom_name
 
-SEARCH_CACHE_TTL = 60
+CACHE_TTL = 60
 _SEARCH_CACHE: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
 
 
@@ -22,7 +22,7 @@ def _get_cached_search(key: tuple):
     if not cached:
         return None
     ts, items = cached
-    if time.time() - ts > SEARCH_CACHE_TTL:
+    if time.time() - ts > CACHE_TTL:
         _SEARCH_CACHE.pop(key, None)
         return None
     return items
@@ -32,8 +32,12 @@ def _set_cached_search(key: tuple, items: list[dict[str, Any]]):
     _SEARCH_CACHE[key] = (time.time(), items)
 
 
-def invalidate_search_cache():
+def clear_search_cache():
     _SEARCH_CACHE.clear()
+
+
+def invalidate_search_cache():
+    clear_search_cache()
 
 
 def _emit(log_cb: Callable[[str, str], None] | None, level: str, message: str):
@@ -113,7 +117,7 @@ async def upload_file(client: Client, file_path: str, log_cb: Callable[[str, str
                 if not metadata:
                     raise TSGError("Failed to extract metadata after upload.")
                     
-                invalidate_search_cache()
+                clear_search_cache()
                 return metadata
                 
             except KeyboardInterrupt:
@@ -371,7 +375,7 @@ async def delete_file(client: Client, file_id: int):
             raise TSGError(f"Message ID {file_id} does not contain valid media.")
             
         await client.delete_messages("me", file_id)
-        invalidate_search_cache()
+        clear_search_cache()
     except TSGError as e:
         raise e
     except Exception as e:
