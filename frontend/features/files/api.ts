@@ -5,7 +5,9 @@ import type {
   DeleteFilesResponse,
   GetFilesParams,
   GetFilesResponse,
+  RenameFileRequest,
   SearchFilesResponse,
+  UpdateTagRequest,
   UploadFileResponse,
 } from '@/types/file';
 
@@ -34,5 +36,15 @@ export const uploadFile = async (file: File) => {
 
 export const deleteFiles = async (payload: DeleteFilesRequest) => {
   const response = await api.delete<DeleteFilesResponse>(API_ROUTES.FILES, { data: payload });
+  return response.data;
+};
+
+export const updateFileTag = async (payload: UpdateTagRequest) => {
+  const response = await api.post(`${API_ROUTES.FILES}/tag`, payload);
+  return response.data;
+};
+
+export const renameFile = async (payload: RenameFileRequest) => {
+  const response = await api.post(`${API_ROUTES.FILES}/rename`, payload);
   return response.data;
 };

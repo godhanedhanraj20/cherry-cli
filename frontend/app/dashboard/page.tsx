@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { deleteFiles, getFiles, searchFiles, uploadFile } from '@/features/files/api';
+import { deleteFiles, getFiles, renameFile, searchFiles, updateFileTag, uploadFile } from '@/features/files/api';
 import { FileTable } from '@/features/files/components/FileTable';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { handleApiError } from '@/services/error-handler';
@@ -26,8 +26,9 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<FileSort>('date');
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>('');
-  const [tagFilter, setTagFilter] = useState('');
-  const [debouncedTag, setDebouncedTag] = useState('');
+  const [tagInput, setTagInput] = useState('');
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [debouncedTagFilters, setDebouncedTagFilters] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
@@ -37,15 +38,27 @@ export default function DashboardPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingBulk, setDeletingBulk] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [taggingId, setTaggingId] = useState<number | null>(null);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const delay = setTimeout(() => {
-      setDebouncedTag(tagFilter.trim());
+      const parsed = tagInput
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      setTagFilters(Array.from(new Set(parsed)));
     }, 500);
 
     return () => clearTimeout(delay);
-  }, [tagFilter]);
+  }, [tagInput]);
+
+  useEffect(() => {
+    setDebouncedTagFilters(tagFilters);
+  }, [tagFilters]);
 
   useEffect(() => {
     const delay = setTimeout(() => {
@@ -58,8 +71,8 @@ export default function DashboardPage() {
   const hasQuery = useMemo(() => debouncedQuery.trim().length > 0, [debouncedQuery]);
 
   const isSearchMode = useMemo(() => {
-    return Boolean(hasQuery || typeFilter || debouncedTag);
-  }, [debouncedTag, hasQuery, typeFilter]);
+    return Boolean(hasQuery || typeFilter || debouncedTagFilters.length > 0);
+  }, [debouncedTagFilters.length, hasQuery, typeFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -67,7 +80,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelectedIds([]);
-  }, [page, sort, typeFilter, debouncedTag, debouncedQuery]);
+  }, [page, sort, typeFilter, debouncedTagFilters, debouncedQuery]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -88,10 +101,10 @@ export default function DashboardPage() {
           sort,
           ...(hasQuery && { query: debouncedQuery }),
           ...(typeFilter && { type: typeFilter }),
-          ...(debouncedTag && { tag: debouncedTag }),
+          ...(debouncedTagFilters.length > 0 && { tag: debouncedTagFilters.join(',') }),
         };
 
-        const shouldUseSearch = isSearchMode && Boolean(hasQuery || typeFilter || debouncedTag);
+        const shouldUseSearch = isSearchMode && Boolean(hasQuery || typeFilter || debouncedTagFilters.length > 0);
         const response = shouldUseSearch ? await searchFiles(params) : await getFiles(params);
         const normalizedFiles = 'files' in response ? response.files ?? [] : response.results ?? [];
 
@@ -118,7 +131,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedQuery, debouncedTag, hasQuery, isAuthorized, isSearchMode, page, reloadKey, sort, typeFilter]);
+  }, [debouncedQuery, debouncedTagFilters, hasQuery, isAuthorized, isSearchMode, page, reloadKey, sort, typeFilter]);
 
   const triggerRefetch = () => setReloadKey((prev) => prev + 1);
 
@@ -143,6 +156,8 @@ export default function DashboardPage() {
 
     setUploadError(null);
     setDeleteError(null);
+    setTagError(null);
+    setRenameError(null);
     setUploading(true);
     try {
       await uploadFile(selectedFile);
@@ -164,6 +179,8 @@ export default function DashboardPage() {
     if (!confirmed) return;
 
     setDeleteError(null);
+    setTagError(null);
+    setRenameError(null);
     setDeletingId(fileId);
     try {
       setFiles((prev) => prev.filter((file) => file.id !== fileId));
@@ -208,6 +225,8 @@ export default function DashboardPage() {
     if (!confirmed) return;
 
     setDeleteError(null);
+    setTagError(null);
+    setRenameError(null);
     setDeletingBulk(true);
     try {
       setFiles((prev) => prev.filter((file) => !selectedIds.includes(file.id)));
@@ -224,6 +243,121 @@ export default function DashboardPage() {
       setDeleteError(handleApiError(err));
     } finally {
       setDeletingBulk(false);
+    }
+  };
+
+  const parseFileTags = (tagString: string) =>
+    tagString
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+  const handleTagClick = (tag: string) => {
+    const trimmed = tag.trim();
+    if (!trimmed) return;
+    setTagFilters((prev) => {
+      if (prev.includes(trimmed)) {
+        return prev.filter((item) => item !== trimmed);
+      }
+      return [...prev, trimmed];
+    });
+    setTagInput((prev) => {
+      const parsed = prev
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (parsed.includes(trimmed)) {
+        return parsed.filter((item) => item !== trimmed).join(', ');
+      }
+      return [...parsed, trimmed].join(', ');
+    });
+    setPage(1);
+  };
+
+  const handleAddTag = async (fileId: number, rawTag: string) => {
+    const nextTag = rawTag.trim();
+    if (!nextTag) {
+      setTagError('Tag cannot be empty');
+      return;
+    }
+    const target = files.find((file) => file.id === fileId);
+    if (!target) return;
+    const existingTags = parseFileTags(target.tags);
+    if (existingTags.includes(nextTag)) {
+      setTagError(`Tag "${nextTag}" already exists`);
+      return;
+    }
+
+    setTagError(null);
+    setTaggingId(fileId);
+    try {
+      await updateFileTag({ file_id: fileId, tag: nextTag });
+      setFiles((prev) =>
+        prev.map((file) =>
+          file.id === fileId
+            ? {
+                ...file,
+                tags: [...parseFileTags(file.tags), nextTag].join(', '),
+              }
+            : file,
+        ),
+      );
+    } catch (err) {
+      setTagError(handleApiError(err));
+    } finally {
+      setTaggingId(null);
+    }
+  };
+
+  const handleRemoveTag = async (fileId: number, tag: string) => {
+    setTagError(null);
+    setTaggingId(fileId);
+    try {
+      await updateFileTag({ file_id: fileId, tag, action: 'remove' });
+      setFiles((prev) =>
+        prev.map((file) =>
+          file.id === fileId
+            ? {
+                ...file,
+                tags: parseFileTags(file.tags)
+                  .filter((item) => item !== tag)
+                  .join(', '),
+              }
+            : file,
+        ),
+      );
+    } catch (err) {
+      setTagError(handleApiError(err));
+    } finally {
+      setTaggingId(null);
+    }
+  };
+
+  const handleRename = async (fileId: number, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setRenameError('Name cannot be empty');
+      return;
+    }
+    const target = files.find((file) => file.id === fileId);
+    if (!target) return;
+
+    const oldExt = target.name.includes('.') ? target.name.split('.').pop() ?? '' : '';
+    const newExt = trimmed.includes('.') ? trimmed.split('.').pop() ?? '' : '';
+    if (oldExt && oldExt !== newExt) {
+      setRenameError(`File extension must remain .${oldExt}`);
+      return;
+    }
+
+    setRenameError(null);
+    setRenamingId(fileId);
+    try {
+      await renameFile({ file_id: fileId, new_name: trimmed });
+      setFiles((prev) => prev.map((file) => (file.id === fileId ? { ...file, name: trimmed } : file)));
+    } catch (err) {
+      setRenameError(handleApiError(err));
+    } finally {
+      setRenamingId(null);
     }
   };
 
@@ -326,12 +460,12 @@ export default function DashboardPage() {
               <span>Tag</span>
               <Input
                 type='text'
-                value={tagFilter}
+                value={tagInput}
                 onChange={(e) => {
-                  setTagFilter(e.target.value);
+                  setTagInput(e.target.value);
                   setPage(1);
                 }}
-                placeholder='Filter by tag'
+                placeholder='Filter by tags (comma-separated)'
               />
             </label>
 
@@ -345,13 +479,15 @@ export default function DashboardPage() {
           {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
           {uploadError ? <div className='text-red-500'>{uploadError}</div> : null}
           {deleteError ? <div className='text-red-500'>{deleteError}</div> : null}
+          {tagError ? <div className='text-red-500'>{tagError}</div> : null}
+          {renameError ? <div className='text-red-500'>{renameError}</div> : null}
 
           {isSearchMode ? (
             <div className='text-sm text-gray-500 mb-2'>
               Filters:
               {hasQuery && ` query="${debouncedQuery}"`}
               {typeFilter && ` type=${typeFilter}`}
-              {debouncedTag && ` tag=${debouncedTag}`}
+              {debouncedTagFilters.length > 0 && ` tag=${debouncedTagFilters.join(',')}`}
             </div>
           ) : null}
 
@@ -375,9 +511,16 @@ export default function DashboardPage() {
               emptyMessage={isSearchMode ? 'No results found' : 'No files found'}
               selectedIds={selectedIds}
               deletingId={deletingId}
+              taggingId={taggingId}
+              renamingId={renamingId}
+              activeTagFilters={tagFilters}
               onSelect={handleSelect}
               onSelectAll={handleSelectAll}
               onDelete={handleDeleteSingle}
+              onTagClick={handleTagClick}
+              onAddTag={handleAddTag}
+              onRemoveTag={handleRemoveTag}
+              onRename={handleRename}
             />
           )}
 

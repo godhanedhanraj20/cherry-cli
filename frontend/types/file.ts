@@ -20,6 +20,17 @@ export interface GetFilesParams {
   tag?: string;
 }
 
+export interface UpdateTagRequest {
+  file_id: number;
+  tag: string;
+  action?: 'remove';
+}
+
+export interface RenameFileRequest {
+  file_id: number;
+  new_name: string;
+}
+
 export interface GetFilesResponse {
   files: FileItem[];
 }
