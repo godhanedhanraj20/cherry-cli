@@ -17,6 +17,7 @@ const MIN_LOADING_TIME = 300;
 export default function DashboardPage() {
   const { isCheckingAuth, isAuthorized } = useAuthGuard();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const currentRequestIdRef = useRef(0);
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,7 @@ export default function DashboardPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingBulk, setDeletingBulk] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelectedIds([]);
-  }, [page, sort, typeFilter, debouncedTag, debouncedQuery, reloadKey]);
+  }, [page, sort, typeFilter, debouncedTag, debouncedQuery]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -76,6 +77,7 @@ export default function DashboardPage() {
     let isMounted = true;
 
     const fetchFiles = async () => {
+      const requestId = ++currentRequestIdRef.current;
       const start = Date.now();
       setLoading(true);
       setError(null);
@@ -94,9 +96,11 @@ export default function DashboardPage() {
         const normalizedFiles = 'files' in response ? response.files ?? [] : response.results ?? [];
 
         if (!isMounted) return;
+        if (requestId !== currentRequestIdRef.current) return;
         setFiles(normalizedFiles);
       } catch (err) {
         if (!isMounted) return;
+        if (requestId !== currentRequestIdRef.current) return;
         setError(handleApiError(err));
       } finally {
         const elapsed = Date.now() - start;
@@ -104,6 +108,7 @@ export default function DashboardPage() {
           await new Promise((resolve) => setTimeout(resolve, MIN_LOADING_TIME - elapsed));
         }
         if (!isMounted) return;
+        if (requestId !== currentRequestIdRef.current) return;
         setLoading(false);
       }
     };
@@ -123,13 +128,21 @@ export default function DashboardPage() {
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
-    if (!selectedFile || uploading) {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles || selectedFiles.length === 0 || uploading) {
       return;
     }
+    if (selectedFiles.length > 1) {
+      setUploadError('Only one file allowed');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+    const selectedFile = selectedFiles[0];
 
     setUploadError(null);
-    setActionError(null);
+    setDeleteError(null);
     setUploading(true);
     try {
       await uploadFile(selectedFile);
@@ -150,17 +163,21 @@ export default function DashboardPage() {
     const confirmed = window.confirm(`Delete file ${fileId}?`);
     if (!confirmed) return;
 
-    setActionError(null);
+    setDeleteError(null);
     setDeletingId(fileId);
     try {
+      setFiles((prev) => prev.filter((file) => file.id !== fileId));
       const result = await deleteFiles({ file_ids: [fileId] });
       if (result.failed > 0) {
-        const firstError = result.errors?.[0]?.error ?? 'Delete failed for one or more files.';
-        setActionError(firstError);
+        const detail = result.errors?.map((item) => `[${item.file_id}] ${item.error}`).join('; ');
+        setDeleteError(`Deleted: ${result.deleted}, Failed: ${result.failed}${detail ? ` (${detail})` : ''}`);
+      } else {
+        setDeleteError(null);
       }
+      setSelectedIds([]);
       triggerRefetch();
     } catch (err) {
-      setActionError(handleApiError(err));
+      setDeleteError(handleApiError(err));
     } finally {
       setDeletingId(null);
     }
@@ -190,18 +207,21 @@ export default function DashboardPage() {
     const confirmed = window.confirm(`Delete ${selectedIds.length} selected file(s)?`);
     if (!confirmed) return;
 
-    setActionError(null);
+    setDeleteError(null);
     setDeletingBulk(true);
     try {
+      setFiles((prev) => prev.filter((file) => !selectedIds.includes(file.id)));
       const result = await deleteFiles({ file_ids: selectedIds });
       if (result.failed > 0) {
-        const firstError = result.errors?.[0]?.error ?? `Deleted ${result.deleted}, failed ${result.failed}.`;
-        setActionError(firstError);
+        const detail = result.errors?.map((item) => `[${item.file_id}] ${item.error}`).join('; ');
+        setDeleteError(`Deleted: ${result.deleted}, Failed: ${result.failed}${detail ? ` (${detail})` : ''}`);
+      } else {
+        setDeleteError(null);
       }
       setSelectedIds([]);
       triggerRefetch();
     } catch (err) {
-      setActionError(handleApiError(err));
+      setDeleteError(handleApiError(err));
     } finally {
       setDeletingBulk(false);
     }
@@ -324,7 +344,7 @@ export default function DashboardPage() {
 
           {error ? <div className='text-red-500 mb-2'>{error}</div> : null}
           {uploadError ? <div className='text-red-500'>{uploadError}</div> : null}
-          {actionError ? <div className='text-red-500'>{actionError}</div> : null}
+          {deleteError ? <div className='text-red-500'>{deleteError}</div> : null}
 
           {isSearchMode ? (
             <div className='text-sm text-gray-500 mb-2'>
