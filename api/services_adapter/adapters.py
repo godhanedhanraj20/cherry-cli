@@ -177,6 +177,7 @@ async def upload_adapter(client, file: UploadFile):
             "file_id": metadata["id"],
             "name": metadata["name"],
             "size": metadata["size"],
+            "invalidate_cache": True,
         }
     finally:
         await file.close()

@@ -20,6 +20,7 @@ class UploadResponse(BaseModel):
     file_id: int
     name: str
     size: str
+    invalidate_cache: Optional[bool] = None
 
 
 class FileListResponse(BaseModel):
